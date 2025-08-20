@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\AOP;
 
+use Symfony\Component\DependencyInjection\ContainerInterface;
+
 /**
  * Join point: a point during the execution of a program, such as the execution of a method or the handling of an
  * exception. In Spring AOP, a join point always represents a method execution.
@@ -24,13 +26,17 @@ class JoinPoint
     private int $currentInterceptorIndex = 0;
     private bool $methodExecuted = false;
     private $methodResult = null;
+    
+    // Container for getting aspects
+    private ?ContainerInterface $container;
 
     public function __construct(
         object $target, 
         string $method, 
         array $arguments,
         array $interceptors = [],
-        ?object $proxy = null
+        ?object $proxy = null,
+        ?ContainerInterface $container = null
     ) {
         $this->target = $target;
         $this->method = $method;
@@ -38,6 +44,7 @@ class JoinPoint
         $this->targetClass = get_class($target);
         $this->proxy = $proxy;
         $this->interceptors = $interceptors;
+        $this->container = $container;
     }
 
     /**
@@ -77,6 +84,19 @@ class JoinPoint
         $this->methodExecuted = false;
         
         return $this->proceed();
+    }
+
+    /**
+     * Get an aspect from the container
+     */
+    public function getAspect(string $aspectClass): object
+    {
+        if ($this->container && $this->container->has($aspectClass)) {
+            return $this->container->get($aspectClass);
+        }
+        
+        // Fallback to creating new instance if not in container
+        return new $aspectClass();
     }
 
     /**

@@ -8,6 +8,7 @@ use ReflectionClass;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * AOP Compiler Pass that weaves aspects into services
@@ -16,6 +17,7 @@ use Symfony\Component\DependencyInjection\Definition;
 class AopCompilerPass implements CompilerPassInterface
 {
     private array $advices = [];
+    private array $aspects = [];
 
     public function process(ContainerBuilder $container): void
     {
@@ -31,23 +33,39 @@ class AopCompilerPass implements CompilerPassInterface
         $aspectCount = 0;
         $adviceCount = 0;
         
+        echo "🔍 AOP: Collecting aspects and advice...\n";
+        
         foreach ($container->getDefinitions() as $id => $definition) {
-            if (!$definition->getClass() || !class_exists($definition->getClass())) {
+            $class = $definition->getClass();
+            
+            if (!$class) {
                 continue;
             }
-
+            
+            // Skip proxy classes to avoid conflicts
+            if (str_ends_with($class, 'Proxy')) {
+                continue;
+            }
+            
+            // Only try to reflect classes that are likely to exist
+            if (!$this->isClassLoadable($class)) {
+                continue;
+            }
+            
             try {
-                $reflectionClass = new ReflectionClass($definition->getClass());
-
-                // Only collect advice from classes that are explicitly marked as aspects
-                if ($reflectionClass->getAttributes(Aspect::class)) {
+                $reflection = new ReflectionClass($class);
+                
+                // Check if this is an aspect class
+                if ($this->hasAspectAttribute($reflection)) {
+                    $this->aspects[] = $class;
                     $aspectCount++;
-                    error_log(sprintf('AOP: Found aspect: %s (%s)', $id, $definition->getClass()));
                     
-                    foreach ($reflectionClass->getMethods() as $method) {
-                        // Only collect advice from public methods
+                    echo "  ✅ Found aspect: $class\n";
+                    
+                    // Collect advice from this aspect
+                    foreach ($reflection->getMethods() as $method) {
                         if ($method->isPublic() && !$method->isConstructor()) {
-                            $this->collectAdvice($method, $definition->getClass());
+                            $this->collectAdvice($method, $class);
                             $adviceCount++;
                         }
                     }
@@ -58,7 +76,13 @@ class AopCompilerPass implements CompilerPassInterface
             }
         }
         
-        error_log(sprintf('AOP: Compiler pass completed. Found %d aspects with %d total advice methods.', $aspectCount, $adviceCount));
+        echo "  📊 Total aspects: $aspectCount, Total advice: $adviceCount\n";
+    }
+
+    private function hasAspectAttribute(ReflectionClass $class): bool
+    {
+        $attributes = $class->getAttributes(Aspect::class);
+        return !empty($attributes);
     }
 
     private function collectAdvice(\ReflectionMethod $method, string $aspectClass): void
@@ -75,23 +99,16 @@ class AopCompilerPass implements CompilerPassInterface
             try {
                 foreach ($method->getAttributes($adviceClass) as $attr) {
                     $instance = $attr->newInstance();
-                    $pointcut = new Pointcut($instance->pointcut);
                     
                     // Store advice method mapped to its pointcut and type
                     $this->advices[] = [
                         'aspect' => $aspectClass,
                         'method' => $method->getName(),
-                        'pointcut' => $pointcut,
+                        'pointcut' => $instance->pointcut,
                         'type' => $adviceType
                     ];
                     
-                    error_log(sprintf(
-                        'AOP: Collected %s advice from %s::%s with pointcut: %s',
-                        $adviceType,
-                        $aspectClass,
-                        $method->getName(),
-                        $instance->pointcut
-                    ));
+                    echo "    ✓ Found $adviceType advice: {$aspectClass}::{$method->getName()} -> {$instance->pointcut}\n";
                 }
             } catch (\Exception $e) {
                 // Skip advice that can't be instantiated
@@ -102,105 +119,108 @@ class AopCompilerPass implements CompilerPassInterface
 
     private function applyAdvice(ContainerBuilder $container): void
     {
+        echo "🏗️  AOP: Applying advice to services...\n";
+        
         foreach ($container->getDefinitions() as $id => $definition) {
-            // Skip Symfony internal services and services without classes
-            if ($this->shouldSkipService($id, $definition)) {
+            $class = $definition->getClass();
+            
+            if (!$class) {
                 continue;
             }
-
-            if (!$definition->getClass() || !class_exists($definition->getClass())) {
+            
+            // Skip proxy classes to avoid conflicts
+            if (str_ends_with($class, 'Proxy')) {
                 continue;
             }
-
-            try {
-                $class = $definition->getClass();
-                $reflectionClass = new ReflectionClass($class);
-                $matchingAdvices = [];
-
-                // Find all matching advice for this service
-                foreach ($this->advices as $advice) {
-                    if ($this->adviceMatches($advice, $class, $reflectionClass)) {
-                        $matchingAdvices[] = $advice;
-                    }
-                }
-
-                if (!empty($matchingAdvices)) {
-                    // Log which services have matching advice
-                    error_log(sprintf(
-                        'AOP: Service %s (%s) has %d matching advice(s)',
-                        $id,
-                        $class,
-                        count($matchingAdvices)
-                    ));
-                    
-                    // For now, just log that we found matching advice
-                    // Proxy generation will be implemented later
-                    $this->logAdviceApplication($id, $class, $matchingAdvices);
-                }
-            } catch (\Exception $e) {
-                // Skip services that cause reflection errors
+            
+            // Only process classes that are likely to exist and be loadable
+            if (!$this->isClassLoadable($class)) {
                 continue;
+            }
+            
+            // Check if this service has any matching advice
+            $matchingAdvice = $this->findMatchingAdvice($class);
+            
+            if (!empty($matchingAdvice)) {
+                echo "  🔧 Applying AOP to service: $id ($class)\n";
+                
+                // Replace the service definition with a proxy
+                $this->replaceWithProxy($container, $id, $definition, $class);
             }
         }
     }
 
-    private function shouldSkipService(string $id, Definition $definition): bool
+    private function findMatchingAdvice(string $class): array
     {
-        // Skip Symfony internal services
-        $skipPrefixes = [
-            'cache.',
-            'doctrine.',
-            'router.',
-            'session.',
-            'security.',
-            'twig.',
-            'validator.',
-            'serializer.',
-            'messenger.',
-            'mailer.',
-            'http_client.',
-            'lock.',
-            'secrets.',
-            'web_profiler.',
-            'debug.',
-            'data_collector.',
-            'monolog.',
-            'framework.',
-            'kernel.',
-            'console.'
-        ];
-
-        foreach ($skipPrefixes as $prefix) {
-            if (str_starts_with($id, $prefix)) {
-                return true;
+        $matchingAdvice = [];
+        
+        foreach ($this->advices as $advice) {
+            // Simple pointcut matching - you can enhance this
+            if (str_contains($advice['pointcut'], $class) || 
+                str_contains($advice['pointcut'], '*') ||
+                str_contains($advice['pointcut'], 'App\\Service\\')) {
+                $matchingAdvice[] = $advice;
             }
         }
+        
+        return $matchingAdvice;
+    }
 
-        // Skip services that are already factories or abstract
-        if ($definition->isAbstract() || $definition->getFactory()) {
-            return true;
+    private function replaceWithProxy(ContainerBuilder $container, string $id, Definition $definition, string $class): void
+    {
+        // Create proxy class name
+        $proxyClass = $class . 'Proxy';
+        
+        // Create new definition for the proxy
+        $proxyDefinition = new Definition($proxyClass);
+        $proxyDefinition->setPublic($definition->isPublic());
+        $proxyDefinition->setLazy($definition->isLazy());
+        
+        // Add container as constructor argument
+        $proxyDefinition->addArgument(new Reference('service_container'));
+        
+        // Copy other constructor arguments from original definition
+        foreach ($definition->getArguments() as $argument) {
+            $proxyDefinition->addArgument($argument);
         }
-
-        return false;
+        
+        // Copy method calls
+        foreach ($definition->getMethodCalls() as $methodCall) {
+            $proxyDefinition->addMethodCall($methodCall[0], $methodCall[1]);
+        }
+        
+        // Copy properties
+        foreach ($definition->getProperties() as $property => $value) {
+            $proxyDefinition->setProperty($property, $value);
+        }
+        
+        // Replace the original definition
+        $container->setDefinition($id, $proxyDefinition);
+        
+        echo "    ✅ Replaced with proxy: $proxyClass\n";
     }
 
-    private function adviceMatches(array $advice, string $class, ReflectionClass $reflectionClass): bool
+    private function isClassLoadable(string $class): bool
     {
-        $pointcut = $advice['pointcut'];
+        // Skip classes that are likely to cause issues
+        if (str_contains($class, 'Proxy') || 
+            str_contains($class, 'Mock') ||
+            str_contains($class, 'Test') ||
+            str_starts_with($class, 'Symfony\\') ||
+            str_starts_with($class, 'Doctrine\\') ||
+            str_starts_with($class, 'Twig\\') ||
+            str_starts_with($class, 'Monolog\\') ||
+            str_starts_with($class, 'Psr\\') ||
+            $class === 'Closure' ||
+            $class === 'callable' ||
+            $class === 'string' ||
+            $class === 'int' ||
+            $class === 'float' ||
+            $class === 'bool' ||
+            $class === 'array') {
+            return false;
+        }
         
-        // Simple matching: just check if the pointcut matches the class
-        $matches = $pointcut->matches($class, '*');
-        
-
-        
-        return $matches;
-    }
-
-
-
-    private function logAdviceApplication(string $serviceId, string $className, array $advices): void
-    {
-        // For now, just log that we found matching advice
-        // This will be replaced with actual proxy generation later
+        return true;
     }
 }

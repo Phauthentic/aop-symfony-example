@@ -269,23 +269,42 @@ class AopProxyGenerator
     }
 
     /**
-     * Generate a proxy class for a target class
+     * Generate a proxy class for the given target class
      */
     private function generateProxyClass(string $targetClass): void
     {
         $reflection = new \ReflectionClass($targetClass);
         $proxyClassName = $reflection->getShortName() . 'Proxy';
-        $proxyNamespace = $reflection->getNamespaceName();
+        $proxyClassPath = $this->outputDir . '/' . $proxyClassName . '.php';
+        
+        echo "   📝 Generating proxy for: $targetClass\n";
         
         // Create proxy class by copying the entire original class
         $proxyClass = new ClassType($proxyClassName);
+        $proxyClass->setExtends($reflection->getShortName()); // Make proxy extend original class
         $proxyClass->addComment("AOP Proxy for $targetClass");
         $proxyClass->addComment("Generated automatically with advice injection");
         $proxyClass->addComment("This is a complete copy of the original class with injected AOP advice");
         
+        // Add container access
+        $proxyClass->addProperty('container')
+            ->setType('\\Symfony\\Component\\DependencyInjection\\ContainerInterface')
+            ->setVisibility('private');
+        
+        // Add constructor to inject container
+        $constructor = $proxyClass->addMethod('__construct');
+        $constructor->addParameter('container')
+            ->setType('\\Symfony\\Component\\DependencyInjection\\ContainerInterface');
+        $constructor->setBody('$this->container = $container;');
+        
+        // Add getContainer method
+        $getContainerMethod = $proxyClass->addMethod('getContainer');
+        $getContainerMethod->setReturnType('\\Symfony\\Component\\DependencyInjection\\ContainerInterface');
+        $getContainerMethod->setBody('return $this->container;');
+        
         // Add JoinPoint property for advice execution
         $proxyClass->addProperty('joinPoint')
-            ->setType(JoinPoint::class)
+            ->setType('\\App\\AOP\\JoinPoint')
             ->setVisibility('private');
         
         // Add TargetSource property for proper target management
@@ -295,13 +314,17 @@ class AopProxyGenerator
         
         // Copy all properties from the original class
         foreach ($reflection->getProperties() as $property) {
-            $proxyProperty = $proxyClass->addProperty($property->getName());
-            $proxyProperty->setVisibility($this->getPropertyVisibility($property));
-            $proxyProperty->setType($property->getType()?->getName());
-            
-            // Copy property comments if available
-            if ($property->getDocComment()) {
-                $proxyProperty->addComment($property->getDocComment());
+            if (!$property->isStatic()) {
+                $proxyProperty = $proxyClass->addProperty($property->getName());
+                $proxyProperty->setVisibility($this->getPropertyVisibility($property));
+                
+                if ($property->getType()) {
+                    $proxyProperty->setType($property->getType()->getName());
+                }
+                
+                if ($property->hasDefaultValue()) {
+                    $proxyProperty->setValue($property->getDefaultValue());
+                }
             }
         }
         
@@ -310,31 +333,28 @@ class AopProxyGenerator
             if ($method->isPublic() && !$method->isConstructor()) {
                 $this->processMethodWithAdvice($proxyClass, $method, $targetClass);
             } elseif ($method->isConstructor()) {
-                // Copy constructor as-is
-                $this->copyMethod($proxyClass, $method);
+                // Skip constructor as we've already added our own
+                continue;
             } else {
-                // Copy other methods (protected/private) as-is
                 $this->copyMethod($proxyClass, $method);
             }
         }
         
-        // Generate the PHP file
-        $namespace = new PhpNamespace($proxyNamespace);
-        $namespace->add($proxyClass);
+        // Generate the PHP code
+        $printer = new \Nette\PhpGenerator\Printer();
+        $phpCode = $printer->printClass($proxyClass);
         
-        $file = new PhpFile();
-        $file->addComment("Auto-generated AOP proxy for $targetClass");
-        $file->setStrictTypes();
-        $file->addNamespace($namespace);
+        // Add the opening PHP tag, namespace, and strict types
+        $namespace = $reflection->getNamespaceName();
+        $fullCode = "<?php\n\n" .
+                    "declare(strict_types=1);\n\n" .
+                    "namespace $namespace;\n\n" .
+                    $phpCode;
         
-        // Write to file
-        $printer = new PsrPrinter();
-        $generatedCode = $printer->printFile($file);
+        // Write the proxy class to file
+        file_put_contents($proxyClassPath, $fullCode);
         
-        $outputFile = $this->outputDir . '/' . $proxyClassName . '.php';
-        file_put_contents($outputFile, $generatedCode);
-        
-        echo "     ✓ Generated: $outputFile\n";
+        echo "     ✓ Generated: $proxyClassPath\n";
     }
 
     /**
@@ -441,23 +461,34 @@ class AopProxyGenerator
         if (!empty($aroundAdvice)) {
             foreach ($aroundAdvice as $advice) {
                 $interceptorChain[] = sprintf(
-                    'function($joinPoint) { $aspect = new \\%s(); return $aspect->%s($joinPoint); }',
+                    'function($joinPoint) { $aspect = $joinPoint->getAspect(\\%s::class); return $aspect->%s($joinPoint); }',
                     $advice['aspect'],
                     $advice['method']
                 );
             }
         }
         
-        // Create JoinPoint with interceptor chain
-        $body[] = '// Create temporary instance for JoinPoint target (to avoid infinite loops)';
-        $body[] = '$tempTarget = new \\' . $method->getDeclaringClass()->getName() . '();';
+        // Create JoinPoint with interceptor chain and container
+        $body[] = '// Get the original service instance from container';
+        $body[] = '$container = $this->getContainer();';
+        $body[] = '// Try to get by class name first, then by common service ID patterns';
+        $body[] = '$originalService = null;';
+        $body[] = 'if ($container->has(\\' . $method->getDeclaringClass()->getName() . '::class)) {';
+        $body[] = '    $originalService = $container->get(\\' . $method->getDeclaringClass()->getName() . '::class);';
+        $body[] = '} elseif ($container->has(\'' . strtolower(str_replace('\\', '.', $method->getDeclaringClass()->getName())) . '\')) {';
+        $body[] = '    $originalService = $container->get(\'' . strtolower(str_replace('\\', '.', $method->getDeclaringClass()->getName())) . '\');';
+        $body[] = '} else {';
+        $body[] = '    // Fallback: create new instance';
+        $body[] = '    $originalService = new \\' . $method->getDeclaringClass()->getName() . '();';
+        $body[] = '}';
+        $body[] = '';
         
         if (!empty($interceptorChain)) {
             $body[] = '// Create interceptor chain for Around advice';
             $body[] = '$interceptors = [' . implode(', ', $interceptorChain) . '];';
-            $body[] = '$this->joinPoint = new \\App\\AOP\\JoinPoint($tempTarget, \'' . $method->getName() . '\', [' . $paramVars . '], $interceptors, $this);';
+            $body[] = '$this->joinPoint = new \\App\\AOP\\JoinPoint($originalService, \'' . $method->getName() . '\', [' . $paramVars . '], $interceptors, $this, $container);';
         } else {
-            $body[] = '$this->joinPoint = new \\App\\AOP\\JoinPoint($tempTarget, \'' . $method->getName() . '\', [' . $paramVars . '], [], $this);';
+            $body[] = '$this->joinPoint = new \\App\\AOP\\JoinPoint($originalService, \'' . $method->getName() . '\', [' . $paramVars . '], [], $this, $container);';
         }
         $body[] = '';
         
@@ -465,7 +496,7 @@ class AopProxyGenerator
         $beforeAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === Before::class);
         foreach ($beforeAdvice as $advice) {
             $body[] = '// Execute Before advice';
-            $body[] = '$aspect = new \\' . $advice['aspect'] . '();';
+            $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
             $body[] = '$aspect->' . $advice['method'] . '($this->joinPoint);';
             $body[] = '';
         }
@@ -475,13 +506,8 @@ class AopProxyGenerator
             $body[] = '// Execute method through Around advice interceptor chain';
             $body[] = '$result = $this->joinPoint->proceed();';
         } else {
-            $body[] = '// Execute original method body directly';
-            $body[] = '// Get potentially modified arguments from JoinPoint';
-            $body[] = '$executionArgs = $this->joinPoint->getArguments();';
-            $body[] = '';
-            $body[] = '// Create a temporary instance and call the method with modified arguments';
-            $body[] = '$tempInstance = new \\' . $method->getDeclaringClass()->getName() . '();';
-            $body[] = '$result = call_user_func_array([$tempInstance, \'' . $method->getName() . '\'], $executionArgs);';
+            // Call the parent method directly since we're extending the original class
+            $body[] = '$result = parent::' . $method->getName() . '(' . $paramVars . ');';
         }
         $body[] = '';
         
@@ -489,7 +515,7 @@ class AopProxyGenerator
         $afterReturningAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === AfterReturning::class);
         foreach ($afterReturningAdvice as $advice) {
             $body[] = '// Execute AfterReturning advice';
-            $body[] = '$aspect = new \\' . $advice['aspect'] . '();';
+            $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
             $body[] = '$aspect->' . $advice['method'] . '($result);';
             $body[] = '';
         }
@@ -498,7 +524,7 @@ class AopProxyGenerator
         $afterAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === After::class);
         foreach ($afterAdvice as $advice) {
             $body[] = '// Execute After advice (finally)';
-            $body[] = '$aspect = new \\' . $advice['aspect'] . '();';
+            $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
             $body[] = '$aspect->' . $advice['method'] . '($this->joinPoint);';
             $body[] = '';
         }
