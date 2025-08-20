@@ -7,9 +7,9 @@ namespace App\Service;
 /**
  *
  */
-class UserTestClass
+class UserService
 {
-    public function test(string $test): void
+    public function tellName(string $test): void
     {
         echo "Executing test() and printing:\n";
         echo $test;
