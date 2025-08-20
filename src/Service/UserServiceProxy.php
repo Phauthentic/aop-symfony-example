@@ -11,12 +11,13 @@ namespace App\Service;
 /**
  * Proxy class for UserService with injected logging
  */
-class UserServiceProxy extends UserService
+class UserServiceProxy
 {
     public function tellName(string $test): void
     {
         echo "PROXY START: tellName method called";
-        parent::tellName($test);
+        echo "Executing test() and printing:\n";
+        echo $test;
         echo "PROXY END: tellName method finished";
     }
 }
