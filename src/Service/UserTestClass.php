@@ -11,7 +11,7 @@ class UserTestClass
 {
     public function test(string $test): void
     {
-        echo "Executing test()\n";
+        echo "Executing test() and printing:\n";
         echo $test;
     }
 }
