@@ -28,21 +28,37 @@ class AopCompilerPass implements CompilerPassInterface
 
     private function collectAspects(ContainerBuilder $container): void
     {
+        $aspectCount = 0;
+        $adviceCount = 0;
+        
         foreach ($container->getDefinitions() as $id => $definition) {
             if (!$definition->getClass() || !class_exists($definition->getClass())) {
                 continue;
             }
 
-            $reflectionClass = new ReflectionClass($definition->getClass());
+            try {
+                $reflectionClass = new ReflectionClass($definition->getClass());
 
-            // Find Aspect classes
-            if ($reflectionClass->getAttributes(Aspect::class)) {
-                foreach ($reflectionClass->getMethods() as $method) {
-                    // Collect all types of advice
-                    $this->collectAdvice($method, $definition->getClass());
+                // Only collect advice from classes that are explicitly marked as aspects
+                if ($reflectionClass->getAttributes(Aspect::class)) {
+                    $aspectCount++;
+                    error_log(sprintf('AOP: Found aspect: %s (%s)', $id, $definition->getClass()));
+                    
+                    foreach ($reflectionClass->getMethods() as $method) {
+                        // Only collect advice from public methods
+                        if ($method->isPublic() && !$method->isConstructor()) {
+                            $this->collectAdvice($method, $definition->getClass());
+                            $adviceCount++;
+                        }
+                    }
                 }
+            } catch (\ReflectionException $e) {
+                // Skip classes that can't be reflected
+                continue;
             }
         }
+        
+        error_log(sprintf('AOP: Compiler pass completed. Found %d aspects with %d total advice methods.', $aspectCount, $adviceCount));
     }
 
     private function collectAdvice(\ReflectionMethod $method, string $aspectClass): void
@@ -56,17 +72,30 @@ class AopCompilerPass implements CompilerPassInterface
         ];
 
         foreach ($adviceTypes as $adviceClass => $adviceType) {
-            foreach ($method->getAttributes($adviceClass) as $attr) {
-                $instance = $attr->newInstance();
-                $pointcut = new Pointcut($instance->pointcut);
-                
-                // Store advice method mapped to its pointcut and type
-                $this->advices[] = [
-                    'aspect' => $aspectClass,
-                    'method' => $method->getName(),
-                    'pointcut' => $pointcut,
-                    'type' => $adviceType
-                ];
+            try {
+                foreach ($method->getAttributes($adviceClass) as $attr) {
+                    $instance = $attr->newInstance();
+                    $pointcut = new Pointcut($instance->pointcut);
+                    
+                    // Store advice method mapped to its pointcut and type
+                    $this->advices[] = [
+                        'aspect' => $aspectClass,
+                        'method' => $method->getName(),
+                        'pointcut' => $pointcut,
+                        'type' => $adviceType
+                    ];
+                    
+                    error_log(sprintf(
+                        'AOP: Collected %s advice from %s::%s with pointcut: %s',
+                        $adviceType,
+                        $aspectClass,
+                        $method->getName(),
+                        $instance->pointcut
+                    ));
+                }
+            } catch (\Exception $e) {
+                // Skip advice that can't be instantiated
+                continue;
             }
         }
     }
@@ -74,81 +103,104 @@ class AopCompilerPass implements CompilerPassInterface
     private function applyAdvice(ContainerBuilder $container): void
     {
         foreach ($container->getDefinitions() as $id => $definition) {
+            // Skip Symfony internal services and services without classes
+            if ($this->shouldSkipService($id, $definition)) {
+                continue;
+            }
+
             if (!$definition->getClass() || !class_exists($definition->getClass())) {
                 continue;
             }
 
-            $class = $definition->getClass();
-            $reflectionClass = new ReflectionClass($class);
-            $matchingAdvices = [];
+            try {
+                $class = $definition->getClass();
+                $reflectionClass = new ReflectionClass($class);
+                $matchingAdvices = [];
 
-            // Find all matching advice for this service
-            foreach ($this->advices as $advice) {
-                if ($this->adviceMatches($advice, $class, $reflectionClass)) {
-                    $matchingAdvices[] = $advice;
+                // Find all matching advice for this service
+                foreach ($this->advices as $advice) {
+                    if ($this->adviceMatches($advice, $class, $reflectionClass)) {
+                        $matchingAdvices[] = $advice;
+                    }
                 }
-            }
 
-            if (!empty($matchingAdvices)) {
-                // Create a factory definition that will generate the proxy
-                $this->createProxyDefinition($container, $id, $definition, $matchingAdvices);
+                if (!empty($matchingAdvices)) {
+                    // Log which services have matching advice
+                    error_log(sprintf(
+                        'AOP: Service %s (%s) has %d matching advice(s)',
+                        $id,
+                        $class,
+                        count($matchingAdvices)
+                    ));
+                    
+                    // For now, just log that we found matching advice
+                    // Proxy generation will be implemented later
+                    $this->logAdviceApplication($id, $class, $matchingAdvices);
+                }
+            } catch (\Exception $e) {
+                // Skip services that cause reflection errors
+                continue;
             }
         }
+    }
+
+    private function shouldSkipService(string $id, Definition $definition): bool
+    {
+        // Skip Symfony internal services
+        $skipPrefixes = [
+            'cache.',
+            'doctrine.',
+            'router.',
+            'session.',
+            'security.',
+            'twig.',
+            'validator.',
+            'serializer.',
+            'messenger.',
+            'mailer.',
+            'http_client.',
+            'lock.',
+            'secrets.',
+            'web_profiler.',
+            'debug.',
+            'data_collector.',
+            'monolog.',
+            'framework.',
+            'kernel.',
+            'console.'
+        ];
+
+        foreach ($skipPrefixes as $prefix) {
+            if (str_starts_with($id, $prefix)) {
+                return true;
+            }
+        }
+
+        // Skip services that are already factories or abstract
+        if ($definition->isAbstract() || $definition->getFactory()) {
+            return true;
+        }
+
+        return false;
     }
 
     private function adviceMatches(array $advice, string $class, ReflectionClass $reflectionClass): bool
     {
         $pointcut = $advice['pointcut'];
         
-        // Check if class matches
-        if (!$pointcut->matches($class, '*')) {
-            return false;
-        }
+        // Simple matching: just check if the pointcut matches the class
+        $matches = $pointcut->matches($class, '*');
+        
 
-        // Check for annotation-based matching
-        if ($pointcut->hasAnnotationMatching()) {
-            return $this->checkAnnotationMatching($pointcut, $reflectionClass);
-        }
-
-        return true;
+        
+        return $matches;
     }
 
-    private function checkAnnotationMatching(Pointcut $pointcut, ReflectionClass $reflectionClass): bool
+
+
+    private function logAdviceApplication(string $serviceId, string $className, array $advices): void
     {
-        $annotationClass = $pointcut->getAnnotationClass();
-        
-        // Check if the class itself has the annotation
-        if ($reflectionClass->getAttributes($annotationClass)) {
-            return true;
-        }
-
-        // Check if any method has the annotation
-        foreach ($reflectionClass->getMethods() as $method) {
-            if ($method->getAttributes($annotationClass)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function createProxyDefinition(ContainerBuilder $container, string $id, Definition $definition, array $advices): void
-    {
-        // Create a factory service that will generate the proxy
-        $factoryId = $id . '.aop_factory';
-        
-        $factoryDefinition = new Definition();
-        $factoryDefinition->setClass(ProxyGenerator::class);
-        $factoryDefinition->setFactory([ProxyGenerator::class, 'createProxy']);
-        $factoryDefinition->setArguments([
-            new \Symfony\Component\DependencyInjection\Reference($id . '.inner'),
-            $advices
-        ]);
-        
-        $container->setDefinition($factoryId, $factoryDefinition);
-
-        // Replace the original service definition with the factory
-        $definition->setFactory([new \Symfony\Component\DependencyInjection\Reference($factoryId), 'createProxy']);
-        $definition->setArguments([]);
+        // For now, just log that we found matching advice
+        // This will be replaced with actual proxy generation later
     }
 }

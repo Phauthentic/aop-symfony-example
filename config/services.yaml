@@ -20,11 +20,5 @@ services:
             - '../src/Entity/'
             - '../src/Kernel.php'
 
-    # Service decoration for UserTestClass
-    App\Service\UserTestClassDecorator:
-        decorates: App\Service\UserTestClass
-        arguments:
-            $innerService: '@.inner'
-
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

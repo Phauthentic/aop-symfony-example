@@ -1,19 +1,19 @@
-# Symfony AOP Implementation
+# Simple Symfony AOP Implementation
 
-This is a PHP implementation of Aspect-Oriented Programming (AOP) that follows Spring AOP patterns and concepts.
+This is a simplified PHP implementation of Aspect-Oriented Programming (AOP) for Symfony.
 
 ## Overview
 
-This AOP implementation provides the same core concepts as Spring AOP:
+This AOP implementation provides basic cross-cutting functionality:
 
-- **Aspects**: Classes that implement cross-cutting concerns
-- **Advice**: Actions taken by aspects at join points
+- **Aspects**: Classes marked with `#[Aspect]` that implement cross-cutting concerns
+- **Advice**: Actions taken by aspects at join points  
 - **Join Points**: Points during program execution (method execution)
-- **Pointcuts**: Predicates that match join points
+- **Pointcuts**: Simple patterns that match classes and methods
 
 ## Advice Types
 
-The system supports all Spring AOP advice types:
+The system supports basic advice types:
 
 ### 1. @Before
 Executed before the join point (method execution).
@@ -75,30 +75,22 @@ public function afterThrowingAdvice(JoinPoint $joinPoint, \Throwable $exception)
 
 ## Pointcut Expressions
 
-The system supports Spring-like pointcut expressions:
+The system supports simple pointcut expressions:
 
-### Execution Expressions
-```php
-#[Before("execution(* App\Service\*.*(..))")]  // All methods in App\Service namespace
-#[Before("execution(public * App\Service\*::get*())")]  // Public getter methods
-#[Before("execution(* App\Service\UserService::*())")]  // All methods in UserService
-```
-
-### Within Expressions
-```php
-#[After("within(App\Service\*)")]  // All methods within App\Service namespace
-#[After("within(App\Service\UserService)")]  // All methods within UserService class
-```
-
-### Annotation-based Pointcuts
-```php
-#[Before("@annotation(App\AOP\Loggable)")]  // Methods annotated with @Loggable
-```
-
-### Simple Class::Method Format
+### Class::Method Format
 ```php
 #[Before("App\Service\UserService::getName")]  // Specific method
 #[Before("App\Service\UserService::*")]  // All methods in class
+```
+
+### Class Name Format
+```php
+#[Before("App\Service\UserService")]  // All methods in class (shorthand)
+```
+
+### Wildcard Support
+```php
+#[Before("App\Service\*")]  // All classes starting with App\Service\
 ```
 
 ## Creating Aspects
@@ -117,10 +109,10 @@ namespace App\AOP;
 #[Aspect]
 class LoggingAspect
 {
-    #[Before("execution(* App\Service\*.*(..))")]
-    public function logBefore(JoinPoint $joinPoint): void
+    #[Before("App\Service\*")]
+    public function logBefore(): void
     {
-        echo "Executing: " . $joinPoint->getSignature() . "\n";
+        echo "Executing service method\n";
     }
 }
 ```
@@ -158,10 +150,20 @@ The AOP system is automatically configured through Symfony's compiler pass syste
 
 ## Example Usage
 
-See `ExampleAspect.php` for a complete example showing all advice types and pointcut expressions.
+See `TestAspect.php` for a simple example showing basic advice types and pointcut expressions.
+
+## Current Status
+
+This is a basic implementation that provides:
+- ✅ Aspect detection and advice collection
+- ✅ Simple pointcut matching
+- ✅ Integration with Symfony DI container
+- ⏳ Proxy generation (not yet implemented)
+- ⏳ Actual advice execution (not yet implemented)
 
 ## Limitations
 
-- Currently only supports method execution join points (like Spring AOP)
-- Proxy generation is not yet implemented
-- Pointcut expression language is simplified compared to Spring's full implementation
+- Currently only detects and matches advice, doesn't execute it yet
+- Proxy generation needs to be implemented
+- Only supports method execution join points
+- Simplified pointcut expression language

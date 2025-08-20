@@ -22,8 +22,8 @@ class Pointcut
     }
 
     /**
-     * Parse Spring-like pointcut expressions
-     * Supports: execution(), within(), args(), @annotation()
+     * Simple pointcut expression parsing
+     * Supports: Class::method, Class::*, Class
      */
     private function parseExpression(string $expression): void
     {
@@ -31,68 +31,35 @@ class Pointcut
         
         // Simple class::method format
         if (str_contains($expression, '::')) {
-            [$class, $method] = explode('::', $expression);
+            [$class, $method] = explode('::', $expression, 2);
             $this->class = trim($class);
             $this->method = trim($method);
             return;
         }
 
-        // execution() expression
-        if (preg_match('/execution\s*\(\s*([^)]+)\s*\)/', $expression, $matches)) {
-            $this->parseExecutionExpression($matches[1]);
-            return;
-        }
-
-        // within() expression
-        if (preg_match('/within\s*\(\s*([^)]+)\s*\)/', $expression, $matches)) {
-            $this->class = trim($matches[1]);
-            $this->method = '*';
-            return;
-        }
-
-        // @annotation() expression
-        if (preg_match('/@annotation\s*\(\s*([^)]+)\s*\)/', $expression, $matches)) {
-            $this->modifiers['annotation'] = trim($matches[1]);
-            return;
-        }
-
-        // Default: treat as class name
+        // Default: treat as class name (all methods)
         $this->class = $expression;
         $this->method = '*';
     }
 
-    /**
-     * Parse execution expression like: "public * com.example.*.*(..)"
-     */
-    private function parseExecutionExpression(string $executionExpr): void
-    {
-        $parts = explode(' ', trim($executionExpr));
-        
-        if (count($parts) >= 3) {
-            $this->modifiers['visibility'] = $parts[0];
-            $this->modifiers['returnType'] = $parts[1];
-            
-            $methodSignature = $parts[2];
-            if (str_contains($methodSignature, '(')) {
-                [$fullMethod, $params] = explode('(', $methodSignature, 2);
-                $this->modifiers['parameters'] = rtrim($params, ')');
-            }
-            
-            // Extract class and method from signature
-            $methodParts = explode('.', $fullMethod);
-            if (count($methodParts) >= 2) {
-                $this->method = end($methodParts);
-                array_pop($methodParts);
-                $this->class = implode('.', $methodParts);
-            }
-        }
-    }
+
 
     public function matches(string $class, string $method): bool
     {
         // Check if class matches
-        if ($this->class && $this->class !== '*' && $this->class !== $class) {
-            return false;
+        if ($this->class && $this->class !== '*') {
+            // Handle wildcard patterns like "App\Service\*"
+            if (str_ends_with($this->class, '*')) {
+                $baseNamespace = rtrim($this->class, '*');
+                if (!str_starts_with($class, $baseNamespace)) {
+                    return false;
+                }
+            } else {
+                // Exact class match
+                if ($class !== $this->class) {
+                    return false;
+                }
+            }
         }
 
         // Check if method matches
@@ -123,19 +90,5 @@ class Pointcut
         return $this->modifiers;
     }
 
-    /**
-     * Check if this pointcut has annotation-based matching
-     */
-    public function hasAnnotationMatching(): bool
-    {
-        return isset($this->modifiers['annotation']);
-    }
 
-    /**
-     * Get the annotation class for matching
-     */
-    public function getAnnotationClass(): ?string
-    {
-        return $this->modifiers['annotation'] ?? null;
-    }
 }
