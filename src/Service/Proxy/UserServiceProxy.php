@@ -63,21 +63,23 @@ class UserServiceProxy extends UserService
 		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
 		$aspect->validateSetterMethods($this->joinPoint);
 
-		// Execute method through Around advice interceptor chain
+		$aspect = $this->joinPoint->getAspect(\App\AOP\ArgumentModificationAspect::class);
+		$aspect->modifyArguments($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\LoggingAspect::class);
+		$aspect->beforeUserServiceMethod($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect->logServiceMethods($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect->validateSetterMethods($this->joinPoint);
+		$executionArgs = $this->joinPoint->getArguments();
 		$result = $this->joinPoint->proceed();
 
-		// Execute AfterReturning advice
 		$aspect = $this->joinPoint->getAspect(\App\AOP\ArgumentModificationAspect::class);
-		$aspect->modifyResult($result);
-
-		// Execute AfterReturning advice
+		$result = $aspect->modifyResult($result);
 		$aspect = $this->joinPoint->getAspect(\App\AOP\LoggingAspect::class);
-		$aspect->afterReturningTellNameMethod($result);
-
-		// Execute AfterReturning advice
+		$result = $aspect->afterReturningTellNameMethod($result);
 		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
-		$aspect->logGetterMethods($result);
-
+		$result = $aspect->logGetterMethods($result);
 		// Execute After advice (finally)
 		$aspect = $this->joinPoint->getAspect(\App\AOP\ArgumentModificationAspect::class);
 		$aspect->logFinalState($this->joinPoint);

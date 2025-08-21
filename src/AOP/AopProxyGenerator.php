@@ -501,23 +501,29 @@ class AopProxyGenerator
             $body[] = '';
         }
         
+        // Execute Before advice (now gets aspect from JoinPoint)
+        foreach ($beforeAdvice as $advice) {
+            $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
+            $body[] = '$aspect->' . $advice['method'] . '($this->joinPoint);';
+        }
+        
+        // Get the modified arguments from JoinPoint after Before advice
+        $body[] = '$executionArgs = $this->joinPoint->getArguments();';
+        
         // Execute the method through the interceptor chain (or directly if no Around advice)
         if (!empty($aroundAdvice)) {
-            $body[] = '// Execute method through Around advice interceptor chain';
             $body[] = '$result = $this->joinPoint->proceed();';
         } else {
-            // Call the parent method directly since we're extending the original class
-            $body[] = '$result = parent::' . $method->getName() . '(' . $paramVars . ');';
+            // Call the parent method with modified arguments from JoinPoint
+            $body[] = '$result = parent::' . $method->getName() . '(...$executionArgs);';
         }
         $body[] = '';
         
-        // Execute AfterReturning advice
+        // Execute AfterReturning advice (capture modified result)
         $afterReturningAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === AfterReturning::class);
         foreach ($afterReturningAdvice as $advice) {
-            $body[] = '// Execute AfterReturning advice';
             $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
-            $body[] = '$aspect->' . $advice['method'] . '($result);';
-            $body[] = '';
+            $body[] = '$result = $aspect->' . $advice['method'] . '($result);';
         }
         
         // Execute After advice (finally)

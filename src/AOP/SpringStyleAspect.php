@@ -55,13 +55,16 @@ class SpringStyleAspect
 
     /**
      * After returning advice for getter methods
-     * Spring equivalent: @AfterReturning("execution(* get*())")
+     * Spring equivalent: @AfterReturning("execution(* get*(..))")
      */
     #[AfterReturning("execution(* get*(..))")]
-    public function logGetterMethods($result): void
+    public function logGetterMethods($result)
     {
         echo "🌸 SPRING STYLE: Getter method returned\n";
         echo "   Return value: " . json_encode($result) . "\n";
+        
+        // Return the result unchanged for logging-only advice
+        return $result;
     }
 
     /**

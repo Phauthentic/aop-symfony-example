@@ -57,12 +57,17 @@ class TestServiceProxy extends TestService
 		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
 
-		$result = parent::getMessage();
-
-		// Execute AfterReturning advice
 		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
-		$aspect->logGetterMethods($result);
+		$aspect->logServiceMethods($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect->validateSetterMethods($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect->beforeTestServiceMethod($this->joinPoint);
+		$executionArgs = $this->joinPoint->getArguments();
+		$result = parent::getMessage(...$executionArgs);
 
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$result = $aspect->logGetterMethods($result);
 		// Execute After advice (finally)
 		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
 		$aspect->afterTestServiceMethod($this->joinPoint);
@@ -100,12 +105,17 @@ class TestServiceProxy extends TestService
 		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
 
-		$result = parent::processData($data);
-
-		// Execute AfterReturning advice
 		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
-		$aspect->logGetterMethods($result);
+		$aspect->logServiceMethods($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect->validateSetterMethods($this->joinPoint);
+		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect->beforeTestServiceMethod($this->joinPoint);
+		$executionArgs = $this->joinPoint->getArguments();
+		$result = parent::processData(...$executionArgs);
 
+		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$result = $aspect->logGetterMethods($result);
 		// Execute After advice (finally)
 		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
 		$aspect->afterTestServiceMethod($this->joinPoint);
