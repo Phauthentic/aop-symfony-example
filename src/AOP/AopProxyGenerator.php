@@ -144,15 +144,15 @@ class AopProxyGenerator
     {
         echo "🔍 Scanning for AOP aspects...\n";
         
-        // Scan the AOP directory for aspects
-        $aopDir = __DIR__ . '/../AOP';
-        $files = glob($aopDir . '/*.php');
+        // Scan the Aspects directory for application-specific aspects
+        $aspectsDir = __DIR__ . '/../Aspects';
+        $files = glob($aspectsDir . '/*.php');
         
-        echo "   📁 Scanning directory: $aopDir\n";
+        echo "   📁 Scanning directory: $aspectsDir\n";
         echo "   📄 Found files: " . implode(', ', array_map('basename', $files)) . "\n\n";
         
         foreach ($files as $file) {
-            $className = 'App\\AOP\\' . basename($file, '.php');
+            $className = 'App\\Aspects\\' . basename($file, '.php');
             echo "   🔍 Checking: $className\n";
             
             try {
@@ -507,23 +507,64 @@ class AopProxyGenerator
             $body[] = '$aspect->' . $advice['method'] . '($this->joinPoint);';
         }
         
+        // Check for early return after Before advice
+        $body[] = '// Check if Before advice requested early return';
+        $body[] = 'if ($this->joinPoint->shouldReturnEarly()) {';
+        $body[] = '    $earlyReturnValue = $this->joinPoint->getEarlyReturnValue();';
+        $body[] = '    // Execute After advice even for early returns';
+        $afterAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === After::class);
+        foreach ($afterAdvice as $advice) {
+            $body[] = '    $aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
+            $body[] = '    $aspect->' . $advice['method'] . '($this->joinPoint);';
+        }
+        
+        // Handle early return based on method return type
+        if ($method->getReturnType() && $method->getReturnType()->getName() !== 'void') {
+            $body[] = '    return $earlyReturnValue;';
+        } else {
+            $body[] = '    return;';
+        }
+        $body[] = '}';
+        $body[] = '';
+        
         // Get the modified arguments from JoinPoint after Before advice
         $body[] = '$executionArgs = $this->joinPoint->getArguments();';
         
         // Execute the method through the interceptor chain (or directly if no Around advice)
+        $body[] = 'try {';
         if (!empty($aroundAdvice)) {
-            $body[] = '$result = $this->joinPoint->proceed();';
+            $body[] = '    $result = $this->joinPoint->proceed();';
         } else {
-            // Call the parent method with modified arguments from JoinPoint
-            $body[] = '$result = parent::' . $method->getName() . '(...$executionArgs);';
+            // Check if method execution should be skipped
+            $body[] = '    if ($this->joinPoint->shouldSkipMethodExecution()) {';
+            $body[] = '        // Method execution was skipped, use null as result';
+            $body[] = '        $result = null;';
+            $body[] = '    } else {';
+            $body[] = '        // Call the parent method with modified arguments from JoinPoint';
+            $body[] = '        $result = parent::' . $method->getName() . '(...$executionArgs);';
+            $body[] = '    }';
         }
+        $body[] = '} catch (\\Throwable $exception) {';
+        
+        // Execute AfterThrowing advice
+        $afterThrowingAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === AfterThrowing::class);
+        foreach ($afterThrowingAdvice as $advice) {
+            $body[] = '    $aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
+            $body[] = '    $aspect->' . $advice['method'] . '($exception);';
+        }
+        
+        $body[] = '    // Re-throw the exception after advice execution';
+        $body[] = '    throw $exception;';
+        $body[] = '}';
         $body[] = '';
         
-        // Execute AfterReturning advice (capture modified result)
-        $afterReturningAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === AfterReturning::class);
-        foreach ($afterReturningAdvice as $advice) {
-            $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
-            $body[] = '$result = $aspect->' . $advice['method'] . '($result);';
+        // Execute AfterReturning advice (capture modified result) - only for non-void methods
+        if ($method->getReturnType() && $method->getReturnType()->getName() !== 'void') {
+            $afterReturningAdvice = array_filter($adviceList, fn($a) => $a['adviceType'] === AfterReturning::class);
+            foreach ($afterReturningAdvice as $advice) {
+                $body[] = '$aspect = $this->joinPoint->getAspect(\\' . $advice['aspect'] . '::class);';
+                $body[] = '$result = $aspect->' . $advice['method'] . '($result);';
+            }
         }
         
         // Execute After advice (finally)

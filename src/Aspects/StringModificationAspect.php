@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
 use App\AOP\Before;
 use App\AOP\AfterReturning;
+use App\AOP\AfterThrowing;
 use App\AOP\Aspect;
 use App\AOP\JoinPoint;
 
@@ -49,5 +50,16 @@ class StringModificationAspect
         // Convert non-string results to string and add suffix
         return (string) $result . " :AFTER";
     }
+    
+    #[AfterThrowing("App\Service\StringService::*")]
+    public function handleStringServiceException(\Throwable $exception): void
+    {
+        echo "🚨 AFTER THROWING: StringService method threw an exception\n";
+        echo "   Exception: " . get_class($exception) . "\n";
+        echo "   Message: " . $exception->getMessage() . "\n";
+        echo "   File: " . $exception->getFile() . ":" . $exception->getLine() . "\n";
+        
+        // You could log the exception, send notifications, etc.
+        // The exception will be re-thrown after this advice executes
+    }
 }
-

@@ -46,30 +46,50 @@ class TestServiceProxy extends TestService
 		$this->joinPoint = new \App\AOP\JoinPoint($originalService, 'getMessage', [], [], $this, $container);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->logServiceMethods($this->joinPoint);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->validateSetterMethods($this->joinPoint);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
 
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->logServiceMethods($this->joinPoint);
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->validateSetterMethods($this->joinPoint);
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
+		// Check if Before advice requested early return
+		if ($this->joinPoint->shouldReturnEarly()) {
+		    $earlyReturnValue = $this->joinPoint->getEarlyReturnValue();
+		    // Execute After advice even for early returns
+		    $aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
+		    $aspect->afterTestServiceMethod($this->joinPoint);
+		    return $earlyReturnValue;
+		}
+
 		$executionArgs = $this->joinPoint->getArguments();
-		$result = parent::getMessage(...$executionArgs);
+		try {
+		    if ($this->joinPoint->shouldSkipMethodExecution()) {
+		        // Method execution was skipped, use null as result
+		        $result = null;
+		    } else {
+		        // Call the parent method with modified arguments from JoinPoint
+		        $result = parent::getMessage(...$executionArgs);
+		    }
+		} catch (\Throwable $exception) {
+		    // Re-throw the exception after advice execution
+		    throw $exception;
+		}
 
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$result = $aspect->logGetterMethods($result);
 		// Execute After advice (finally)
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->afterTestServiceMethod($this->joinPoint);
 
 		return $result;
@@ -94,30 +114,50 @@ class TestServiceProxy extends TestService
 		$this->joinPoint = new \App\AOP\JoinPoint($originalService, 'processData', [$data], [], $this, $container);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->logServiceMethods($this->joinPoint);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->validateSetterMethods($this->joinPoint);
 
 		// Execute Before advice
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
 
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->logServiceMethods($this->joinPoint);
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$aspect->validateSetterMethods($this->joinPoint);
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->beforeTestServiceMethod($this->joinPoint);
+		// Check if Before advice requested early return
+		if ($this->joinPoint->shouldReturnEarly()) {
+		    $earlyReturnValue = $this->joinPoint->getEarlyReturnValue();
+		    // Execute After advice even for early returns
+		    $aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
+		    $aspect->afterTestServiceMethod($this->joinPoint);
+		    return $earlyReturnValue;
+		}
+
 		$executionArgs = $this->joinPoint->getArguments();
-		$result = parent::processData(...$executionArgs);
+		try {
+		    if ($this->joinPoint->shouldSkipMethodExecution()) {
+		        // Method execution was skipped, use null as result
+		        $result = null;
+		    } else {
+		        // Call the parent method with modified arguments from JoinPoint
+		        $result = parent::processData(...$executionArgs);
+		    }
+		} catch (\Throwable $exception) {
+		    // Re-throw the exception after advice execution
+		    throw $exception;
+		}
 
-		$aspect = $this->joinPoint->getAspect(\App\AOP\SpringStyleAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\SpringStyleAspect::class);
 		$result = $aspect->logGetterMethods($result);
 		// Execute After advice (finally)
-		$aspect = $this->joinPoint->getAspect(\App\AOP\TestAspect::class);
+		$aspect = $this->joinPoint->getAspect(\App\Aspects\TestAspect::class);
 		$aspect->afterTestServiceMethod($this->joinPoint);
 
 		return $result;

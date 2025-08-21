@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
+use App\AOP\Before;
+use App\AOP\Around;
+use App\AOP\AfterReturning;
+use App\AOP\After;
+use App\AOP\Aspect;
 use App\AOP\JoinPoint;
 
-/**
- * Comprehensive logging aspect demonstrating all AOP advice types
- * This aspect will be applied to UserService methods
- */
 #[Aspect]
 class LoggingAspect
 {
@@ -41,10 +42,13 @@ class LoggingAspect
     }
 
     #[AfterReturning("App\Service\UserService::tellName")]
-    public function afterReturningTellNameMethod($result): void
+    public function afterReturningTellNameMethod($result)
     {
         echo "✅ AFTER RETURNING: tellName method returned successfully\n";
         echo "   Return value: " . json_encode($result) . "\n";
+        
+        // Return the result unchanged for logging-only advice
+        return $result;
     }
 
     #[After("App\Service\UserService::*")]

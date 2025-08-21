@@ -20,5 +20,19 @@ class StringService
     {
         return strtoupper($input);
     }
+    
+    public function riskyStringOperation(string $input): string
+    {
+        // Simulate a risky operation that might fail
+        if (strlen($input) > 10) {
+            throw new \InvalidArgumentException("Input string is too long (max 10 characters): " . $input);
+        }
+        
+        if (str_contains($input, 'error')) {
+            throw new \RuntimeException("Input contains forbidden word: 'error'");
+        }
+        
+        return "Safely processed: " . $input;
+    }
 }
 

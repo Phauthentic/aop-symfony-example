@@ -29,6 +29,11 @@ class JoinPoint
     
     // Container for getting aspects
     private ?ContainerInterface $container;
+    
+    // Early return control
+    private bool $shouldReturnEarly = false;
+    private $earlyReturnValue = null;
+    private bool $shouldSkipMethod = false;
 
     public function __construct(
         object $target, 
@@ -180,5 +185,58 @@ class JoinPoint
     public function getKind(): string 
     {
         return 'method-execution';
+    }
+    
+    /**
+     * Set an early return value - this will cause the method to return immediately
+     * without executing the target method or further advice
+     */
+    public function setEarlyReturn($value): void
+    {
+        $this->shouldReturnEarly = true;
+        $this->earlyReturnValue = $value;
+    }
+    
+    /**
+     * Check if an early return has been requested
+     */
+    public function shouldReturnEarly(): bool
+    {
+        return $this->shouldReturnEarly;
+    }
+    
+    /**
+     * Get the early return value
+     */
+    public function getEarlyReturnValue()
+    {
+        return $this->earlyReturnValue;
+    }
+    
+    /**
+     * Skip the target method execution (useful for caching, validation failures, etc.)
+     * The method will not be called, but AfterReturning advice will still execute
+     */
+    public function skipMethodExecution(): void
+    {
+        $this->shouldSkipMethod = true;
+    }
+    
+    /**
+     * Check if method execution should be skipped
+     */
+    public function shouldSkipMethodExecution(): bool
+    {
+        return $this->shouldSkipMethod;
+    }
+    
+    /**
+     * Reset early return state (useful for Around advice)
+     */
+    public function resetEarlyReturn(): void
+    {
+        $this->shouldReturnEarly = false;
+        $this->earlyReturnValue = null;
+        $this->shouldSkipMethod = false;
     }
 }

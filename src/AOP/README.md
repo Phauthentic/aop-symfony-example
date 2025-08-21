@@ -66,10 +66,15 @@ public function afterReturningAdvice(JoinPoint $joinPoint, $result): void
 Executed when the join point throws an exception.
 
 ```php
-#[AfterThrowing("execution(* App\Service\*::*())")]
-public function afterThrowingAdvice(JoinPoint $joinPoint, \Throwable $exception): void
+#[AfterThrowing("App\Service\StringService::*")]
+public function handleStringServiceException(\Throwable $exception): void
 {
-    echo "Exception: " . $exception->getMessage() . "\n";
+    echo "🚨 AFTER THROWING: StringService method threw an exception\n";
+    echo "   Exception: " . get_class($exception) . "\n";
+    echo "   Message: " . $exception->getMessage() . "\n";
+    
+    // The exception will be re-thrown after this advice executes
+    // You can log, notify, or perform cleanup here
 }
 ```
 
@@ -97,25 +102,32 @@ The system supports simple pointcut expressions:
 
 To create an aspect:
 
-1. Mark the class with `#[Aspect]`
-2. Add advice methods with appropriate annotations
-3. Use `JoinPoint` parameter to access method information
+1. **Create the class** in `src/Aspects/` (not in `src/AOP/`)
+2. Mark the class with `#[Aspect]`
+3. Add advice methods with appropriate annotations
+4. Use `JoinPoint` parameter to access method information
 
 ```php
 <?php
 
-namespace App\AOP;
+namespace App\Aspects;  // Note: Use App\Aspects namespace
+
+use App\AOP\Before;
+use App\AOP\Aspect;
+use App\AOP\JoinPoint;
 
 #[Aspect]
 class LoggingAspect
 {
     #[Before("App\Service\*")]
-    public function logBefore(): void
+    public function logBefore(JoinPoint $joinPoint): void
     {
-        echo "Executing service method\n";
+        echo "Executing service method: " . $joinPoint->getSignature() . "\n";
     }
 }
 ```
+
+**Important**: Keep the `src/AOP/` directory clean - it contains only the core framework. Place all application-specific aspects in `src/Aspects/`.
 
 ## JoinPoint Object
 
@@ -150,7 +162,15 @@ The AOP system is automatically configured through Symfony's compiler pass syste
 
 ## Example Usage
 
-See `TestAspect.php` for a simple example showing basic advice types and pointcut expressions.
+See the `src/Aspects/` directory for comprehensive examples showing all advice types and pointcut expressions:
+
+- **`FlowControlAspect.php`** - Advanced flow control (early returns, method skipping)
+- **`StringModificationAspect.php`** - Basic argument and result modification
+- **`LoggingAspect.php`** - Comprehensive logging and profiling
+- **`PerformanceAspect.php`** - Performance monitoring and metrics
+- **`SpringStyleAspect.php`** - Spring AOP style patterns
+- **`ArgumentModificationAspect.php`** - Argument manipulation examples
+- **`TestAspect.php`** - Simple testing and validation
 
 ## Current Status
 

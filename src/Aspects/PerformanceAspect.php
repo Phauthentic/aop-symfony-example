@@ -2,14 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
+use App\AOP\Around;
+use App\AOP\Aspect;
 use App\AOP\JoinPoint;
 
-/**
- * Performance monitoring aspect using AOP
- * Measures execution time of methods and logs performance metrics
- */
 #[Aspect]
 class PerformanceAspect
 {

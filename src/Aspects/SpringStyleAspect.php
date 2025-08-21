@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
+use App\AOP\Before;
+use App\AOP\Around;
+use App\AOP\AfterReturning;
+use App\AOP\Aspect;
 use App\AOP\JoinPoint;
 
-/**
- * Spring Boot style aspect demonstrating advanced pointcut expressions
- * Shows how to use execution(), within(), and other Spring-style patterns
- */
 #[Aspect]
 class SpringStyleAspect
 {

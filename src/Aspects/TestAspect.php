@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
-/**
- * Simple test aspect to verify AOP functionality
- */
+use App\AOP\Before;
+use App\AOP\After;
+use App\AOP\Aspect;
+
 #[Aspect]
 class TestAspect
 {

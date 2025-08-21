@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\AOP;
+namespace App\Aspects;
 
+use App\AOP\Before;
+use App\AOP\AfterReturning;
+use App\AOP\After;
+use App\AOP\Aspect;
 use App\AOP\JoinPoint;
 
-/**
- * Aspect that demonstrates argument modification and result interception
- * This shows how Before advice can modify arguments and AfterReturning can modify results
- */
 #[Aspect]
 class ArgumentModificationAspect
 {
