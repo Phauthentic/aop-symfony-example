@@ -172,6 +172,15 @@ class JoinPoint
     }
 
     /**
+     * Set interceptors for Around advice
+     */
+    public function setInterceptors(array $interceptors): void
+    {
+        $this->interceptors = $interceptors;
+        $this->currentInterceptorIndex = 0;
+    }
+
+    /**
      * Get the signature of the method being called
      */
     public function getSignature(): string 

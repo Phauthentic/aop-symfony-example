@@ -1,189 +1,229 @@
-# Simple Symfony AOP Implementation
-
-This is a simplified PHP implementation of Aspect-Oriented Programming (AOP) for Symfony.
+# Symfony AOP Implementation - Runtime Interception Approach
 
 ## Overview
 
-This AOP implementation provides basic cross-cutting functionality:
+This AOP implementation provides cross-cutting functionality using **runtime interception** instead of proxy generation. This approach is more suitable for PHP and avoids the complexity and issues associated with compile-time proxy generation.
 
-- **Aspects**: Classes marked with `#[Aspect]` that implement cross-cutting concerns
-- **Advice**: Actions taken by aspects at join points  
-- **Join Points**: Points during program execution (method execution)
-- **Pointcuts**: Simple patterns that match classes and methods
+## Key Differences from Proxy Generation
+
+### ❌ **Problems with Proxy Generation Approach**
+- **Broken Runtime**: Generated proxy classes don't exist, causing fatal errors
+- **Overly Aggressive**: Replaces ALL services, including core Symfony services
+- **Complexity**: Requires code generation, compilation, and class loading
+- **Maintenance**: Generated code needs to be managed and updated
+- **PHP Limitations**: PHP's dynamic nature makes static proxy generation problematic
+
+### ✅ **Benefits of Runtime Interception**
+- **Simple**: No code generation or compilation needed
+- **Reliable**: Works with existing services without modification
+- **Flexible**: Can be easily enabled/disabled at runtime
+- **Maintainable**: Less code, fewer moving parts
+- **PHP-Friendly**: Leverages PHP's dynamic capabilities
+
+## Architecture
+
+### 1. **RuntimeInterceptor**
+The core component that handles advice execution:
+```php
+$interceptor = new RuntimeInterceptor($container);
+$result = $interceptor->intercept($target, $methodName, $args, $originalMethod);
+```
+
+### 2. **ServiceWrapper**
+Optional wrapper for services that need AOP interception:
+```php
+$wrapper = new ServiceWrapper($originalService, $interceptor);
+$result = $wrapper->someMethod($args); // Automatically intercepted
+```
+
+### 3. **SimpleAopCompilerPass**
+Registers advice without modifying service definitions:
+```php
+// Only registers the interceptor service
+// Does NOT replace existing services
+```
+
+## Usage
+
+### Basic Setup
+1. **Register the compiler pass** in your kernel:
+```php
+protected function build(ContainerBuilder $container): void
+{
+    $container->addCompilerPass(new SimpleAopCompilerPass());
+}
+```
+
+2. **Create aspects** with advice annotations:
+```php
+#[Aspect]
+class LoggingAspect
+{
+    #[Before("App\Service\*::*")]
+    public function logBefore(JoinPoint $joinPoint): void
+    {
+        // Log method execution
+    }
+}
+```
+
+3. **Use the interceptor** in your services:
+```php
+class UserService
+{
+    public function __construct(private RuntimeInterceptor $interceptor) {}
+    
+    public function someMethod($arg)
+    {
+        // Manual interception
+        return $this->interceptor->intercept(
+            $this, 
+            'someMethod', 
+            [$arg], 
+            fn() => $this->originalMethod($arg)
+        );
+    }
+}
+```
+
+### Automatic Interception
+For automatic interception, wrap your services:
+```php
+// In a factory or service definition
+$service = new UserService();
+$wrapper = new ServiceWrapper($service, $interceptor);
+
+// All method calls are automatically intercepted
+$result = $wrapper->someMethod($arg);
+```
 
 ## Advice Types
 
-The system supports basic advice types:
-
-### 1. @Before
-Executed before the join point (method execution).
-
+### Before Advice
 ```php
-#[Before("execution(* App\Service\*.*(..))")]
+#[Before("App\Service\*::*")]
 public function beforeAdvice(JoinPoint $joinPoint): void
 {
-    echo "Before executing: " . $joinPoint->getSignature() . "\n";
+    // Execute before method call
+    // Can modify arguments: $joinPoint->setArgument(0, $value);
+    // Can request early return: $joinPoint->setEarlyReturn($value);
 }
 ```
 
-### 2. @After
-Executed after the join point (finally block).
-
+### Around Advice
 ```php
-#[After("within(App\Service\*)")]
-public function afterAdvice(JoinPoint $joinPoint): void
-{
-    echo "After executing: " . $joinPoint->getSignature() . "\n";
-}
-```
-
-### 3. @Around
-Executed around the join point, allowing control over method execution.
-
-```php
-#[Around("execution(* App\Service\UserService::*())")]
+#[Around("App\Service\*::*")]
 public function aroundAdvice(JoinPoint $joinPoint)
 {
-    echo "Before method execution\n";
-    $result = $joinPoint->proceed();
-    echo "After method execution\n";
+    // Execute before method call
+    $result = $joinPoint->proceed(); // Call original method
+    // Execute after method call
     return $result;
 }
 ```
 
-### 4. @AfterReturning
-Executed after successful return from the join point.
-
+### AfterReturning Advice
 ```php
-#[AfterReturning("execution(* App\Service\*::get*(..))")]
-public function afterReturningAdvice(JoinPoint $joinPoint, $result): void
+#[AfterReturning("App\Service\*::*")]
+public function afterReturningAdvice($result)
 {
-    echo "Method returned: " . $result . "\n";
+    // Execute after successful return
+    return $result; // Can modify return value
 }
 ```
 
-### 5. @AfterThrowing
-Executed when the join point throws an exception.
-
+### AfterThrowing Advice
 ```php
-#[AfterThrowing("App\Service\StringService::*")]
-public function handleStringServiceException(\Throwable $exception): void
+#[AfterThrowing("App\Service\*::*")]
+public function afterThrowingAdvice(\Throwable $exception): void
 {
-    echo "🚨 AFTER THROWING: StringService method threw an exception\n";
-    echo "   Exception: " . get_class($exception) . "\n";
-    echo "   Message: " . $exception->getMessage() . "\n";
-    
-    // The exception will be re-thrown after this advice executes
-    // You can log, notify, or perform cleanup here
+    // Execute when exception is thrown
+    // Exception is re-thrown after advice execution
+}
+```
+
+### After Advice
+```php
+#[After("App\Service\*::*")]
+public function afterAdvice(JoinPoint $joinPoint): void
+{
+    // Execute after method call (finally block)
+    // Always executes, even with exceptions
 }
 ```
 
 ## Pointcut Expressions
 
-The system supports simple pointcut expressions:
-
-### Class::Method Format
+### Simple Patterns
 ```php
-#[Before("App\Service\UserService::getName")]  // Specific method
-#[Before("App\Service\UserService::*")]  // All methods in class
+"App\Service\UserService::getName"     // Specific method
+"App\Service\UserService::*"           // All methods in class
+"App\Service\*::*"                     // All methods in all service classes
 ```
 
-### Class Name Format
+### Advanced Patterns (Future Enhancement)
 ```php
-#[Before("App\Service\UserService")]  // All methods in class (shorthand)
+"execution(* App\Service\*.*(..))"     // Spring-style execution
+"within(App\Service\*)"                // Within package
+"@annotation(Loggable)"                // Annotation-based
 ```
 
-### Wildcard Support
+## Performance Considerations
+
+### Runtime Overhead
+- **Minimal**: Only intercepts methods with matching advice
+- **Efficient**: Uses simple string matching for pointcuts
+- **Cached**: Advice mapping is built once at container compilation
+
+### Memory Usage
+- **Low**: No generated proxy classes stored in memory
+- **Shared**: Single interceptor instance handles all advice
+- **Clean**: No temporary files or generated code
+
+## Migration from Proxy Generation
+
+If you were using the old proxy generation approach:
+
+1. **Remove old compiler pass**:
 ```php
-#[Before("App\Service\*")]  // All classes starting with App\Service\
+// Remove this
+$container->addCompilerPass(new AopCompilerPass());
 ```
 
-## Creating Aspects
-
-To create an aspect:
-
-1. **Create the class** in `src/Aspects/` (not in `src/AOP/`)
-2. Mark the class with `#[Aspect]`
-3. Add advice methods with appropriate annotations
-4. Use `JoinPoint` parameter to access method information
-
+2. **Add new compiler pass**:
 ```php
-<?php
-
-namespace App\Aspects;  // Note: Use App\Aspects namespace
-
-use App\AOP\Before;
-use App\AOP\Aspect;
-use App\AOP\JoinPoint;
-
-#[Aspect]
-class LoggingAspect
-{
-    #[Before("App\Service\*")]
-    public function logBefore(JoinPoint $joinPoint): void
-    {
-        echo "Executing service method: " . $joinPoint->getSignature() . "\n";
-    }
-}
+// Add this
+$container->addCompilerPass(new SimpleAopCompilerPass());
 ```
 
-**Important**: Keep the `src/AOP/` directory clean - it contains only the core framework. Place all application-specific aspects in `src/Aspects/`.
+3. **Update service usage** (if needed):
+```php
+// Old: Direct service injection (may have been broken)
+$userService = $container->get('user.service');
 
-## JoinPoint Object
+// New: Use wrapper for AOP interception
+$userService = new ServiceWrapper(
+    $container->get('user.service'),
+    $container->get('aop.runtime_interceptor')
+);
+```
 
-The `JoinPoint` object provides access to:
+## Best Practices
 
-- `getTarget()`: The target object
-- `getMethod()`: The method name
-- `getArguments()`: Method arguments
-- `getTargetClass()`: The target class name
-- `getSignature()`: Full method signature
-- `proceed()`: Execute the target method (for Around advice)
-- `proceedWithArguments(array $args)`: Execute with modified arguments
+1. **Keep aspects focused** - One concern per aspect
+2. **Use specific pointcuts** - Avoid overly broad patterns
+3. **Handle exceptions** - Always catch and log errors in advice
+4. **Test thoroughly** - AOP can affect method execution flow
+5. **Monitor performance** - Ensure advice doesn't add significant overhead
 
-## Configuration
+## Future Enhancements
 
-The AOP system is automatically configured through Symfony's compiler pass system. No additional configuration is needed.
+- **Pointcut Parser**: Full Spring-style pointcut expression support
+- **Advice Ordering**: Control execution order of multiple advice
+- **Conditional Advice**: Execute advice based on runtime conditions
+- **Performance Profiling**: Built-in timing and metrics
+- **Hot Reloading**: Update advice without restarting
 
-## Comparison with Spring AOP
+## Conclusion
 
-| Spring AOP | This Implementation |
-|------------|-------------------|
-| `@Aspect` | `#[Aspect]` |
-| `@Before` | `#[Before]` |
-| `@After` | `#[After]` |
-| `@Around` | `#[Around]` |
-| `@AfterReturning` | `#[AfterReturning]` |
-| `@AfterThrowing` | `#[AfterThrowing]` |
-| `ProceedingJoinPoint` | `JoinPoint` |
-| `execution()` expressions | `execution()` expressions |
-| `within()` expressions | `within()` expressions |
-| `@annotation()` | `@annotation()` |
-
-## Example Usage
-
-See the `src/Aspects/` directory for comprehensive examples showing all advice types and pointcut expressions:
-
-- **`FlowControlAspect.php`** - Advanced flow control (early returns, method skipping)
-- **`StringModificationAspect.php`** - Basic argument and result modification
-- **`LoggingAspect.php`** - Comprehensive logging and profiling
-- **`PerformanceAspect.php`** - Performance monitoring and metrics
-- **`SpringStyleAspect.php`** - Spring AOP style patterns
-- **`ArgumentModificationAspect.php`** - Argument manipulation examples
-- **`TestAspect.php`** - Simple testing and validation
-
-## Current Status
-
-This is a basic implementation that provides:
-- ✅ Aspect detection and advice collection
-- ✅ Simple pointcut matching
-- ✅ Integration with Symfony DI container
-- ⏳ Proxy generation (not yet implemented)
-- ⏳ Actual advice execution (not yet implemented)
-
-## Limitations
-
-- Currently only detects and matches advice, doesn't execute it yet
-- Proxy generation needs to be implemented
-- Only supports method execution join points
-- Simplified pointcut expression language
+This runtime interception approach provides a clean, reliable, and maintainable AOP implementation that's well-suited for PHP and Symfony applications. It eliminates the complexity of proxy generation while maintaining all the benefits of aspect-oriented programming.

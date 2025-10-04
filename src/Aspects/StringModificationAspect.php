@@ -13,7 +13,7 @@ use App\AOP\JoinPoint;
 #[Aspect]
 class StringModificationAspect
 {
-    #[Before("App\Service\StringService::*")]
+    #[Before("*::*")]
     public function addBeforePrefix(JoinPoint $joinPoint): void
     {
         $arguments = $joinPoint->getArguments();
@@ -28,7 +28,7 @@ class StringModificationAspect
         }
     }
     
-    #[AfterReturning("App\Service\StringService::*")]
+    #[AfterReturning("*::*")]
     public function addAfterSuffix($result): string
     {
         // Ensure we always return a string
@@ -51,10 +51,10 @@ class StringModificationAspect
         return (string) $result . " :AFTER";
     }
     
-    #[AfterThrowing("App\Service\StringService::*")]
+    #[AfterThrowing("*::*")]
     public function handleStringServiceException(\Throwable $exception): void
     {
-        echo "🚨 AFTER THROWING: StringService method threw an exception\n";
+        echo "🚨 AFTER THROWING: Method threw an exception\n";
         echo "   Exception: " . get_class($exception) . "\n";
         echo "   Message: " . $exception->getMessage() . "\n";
         echo "   File: " . $exception->getFile() . ":" . $exception->getLine() . "\n";

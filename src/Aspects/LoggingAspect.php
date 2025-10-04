@@ -10,16 +10,26 @@ use App\AOP\AfterReturning;
 use App\AOP\After;
 use App\AOP\Aspect;
 use App\AOP\JoinPoint;
+use App\AOP\Logger\LoggerFactory;
+use Psr\Log\LoggerInterface;
 
 #[Aspect]
 class LoggingAspect
 {
+    private LoggerInterface $logger;
+
+    public function __construct()
+    {
+        $this->logger = LoggerFactory::createComponentLogger('LoggingAspect');
+    }
+
     #[Before("App\Service\UserService::*")]
     public function beforeUserServiceMethod(JoinPoint $joinPoint): void
     {
-        echo "🔍 BEFORE: UserService method execution started\n";
-        echo "   Method: " . $joinPoint->getSignature() . "\n";
-        echo "   Arguments: " . json_encode($joinPoint->getArguments()) . "\n";
+        $this->logger->info('UserService method execution started', [
+            'method' => $joinPoint->getSignature(),
+            'arguments' => $joinPoint->getArguments()
+        ]);
         
         // Example: Modify arguments if needed
         // $joinPoint->setArgument(0, 'Modified: ' . $joinPoint->getArgument(0));
@@ -28,15 +38,17 @@ class LoggingAspect
     #[Around("App\Service\UserService::tellName")]
     public function aroundTellNameMethod(JoinPoint $joinPoint)
     {
-        echo "🔄 AROUND: Intercepting tellName method call\n";
-        echo "   Method: " . $joinPoint->getSignature() . "\n";
-        echo "   Arguments: " . json_encode($joinPoint->getArguments()) . "\n";
+        $this->logger->info('Intercepting tellName method call', [
+            'method' => $joinPoint->getSignature(),
+            'arguments' => $joinPoint->getArguments()
+        ]);
         
         // Execute the original method
         $result = $joinPoint->proceed();
         
-        echo "   Result: " . json_encode($result) . "\n";
-        echo "🔄 AROUND: tellName method execution completed\n";
+        $this->logger->info('tellName method execution completed', [
+            'result' => $result
+        ]);
         
         return $result;
     }
@@ -44,8 +56,9 @@ class LoggingAspect
     #[AfterReturning("App\Service\UserService::tellName")]
     public function afterReturningTellNameMethod($result)
     {
-        echo "✅ AFTER RETURNING: tellName method returned successfully\n";
-        echo "   Return value: " . json_encode($result) . "\n";
+        $this->logger->info('tellName method returned successfully', [
+            'return_value' => $result
+        ]);
         
         // Return the result unchanged for logging-only advice
         return $result;
@@ -54,8 +67,9 @@ class LoggingAspect
     #[After("App\Service\UserService::*")]
     public function afterUserServiceMethod(JoinPoint $joinPoint): void
     {
-        echo "🏁 AFTER: UserService method execution completed (finally)\n";
-        echo "   Method: " . $joinPoint->getSignature() . "\n";
-        echo "   Final arguments: " . json_encode($joinPoint->getArguments()) . "\n";
+        $this->logger->info('UserService method execution completed', [
+            'method' => $joinPoint->getSignature(),
+            'final_arguments' => $joinPoint->getArguments()
+        ]);
     }
 }

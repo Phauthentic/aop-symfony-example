@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\AOP;
 
+use App\AOP\Logger\LoggerFactory;
+use Psr\Log\LoggerInterface;
 use ReflectionClass;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -12,20 +14,43 @@ use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * AOP Compiler Pass that weaves aspects into services
- * Implements Spring AOP style aspect weaving
+ * Implements Spring AOP style aspect weaving with proper proxy generation
  */
 class AopCompilerPass implements CompilerPassInterface
 {
     private array $advices = [];
     private array $aspects = [];
+    private LoggerInterface $logger;
+    private HybridProxyGenerator $proxyGenerator;
+
+    public function __construct()
+    {
+        $this->logger = LoggerFactory::createComponentLogger('AopCompilerPass');
+        $this->proxyGenerator = new HybridProxyGenerator('var/proxy-classes');
+    }
 
     public function process(ContainerBuilder $container): void
     {
+        $this->logger->info('Starting AOP compilation process');
+        
         // First pass: collect all aspects and their advice
         $this->collectAspects($container);
 
-        // Second pass: apply advice to matching services
-        $this->applyAdvice($container);
+        if (empty($this->advices)) {
+            $this->logger->info('No AOP advice found, skipping proxy generation');
+            return;
+        }
+
+        // Second pass: generate proxy classes
+        $this->generateProxyClasses();
+
+        // Third pass: replace services with proxies in container
+        $this->replaceServicesWithProxies($container);
+        
+        $this->logger->info('AOP compilation completed', [
+            'total_aspects' => count($this->aspects),
+            'total_advice' => count($this->advices)
+        ]);
     }
 
     private function collectAspects(ContainerBuilder $container): void
@@ -33,22 +58,12 @@ class AopCompilerPass implements CompilerPassInterface
         $aspectCount = 0;
         $adviceCount = 0;
         
-        echo "🔍 AOP: Collecting aspects and advice...\n";
+        $this->logger->info('Collecting aspects and advice');
         
         foreach ($container->getDefinitions() as $id => $definition) {
             $class = $definition->getClass();
             
-            if (!$class) {
-                continue;
-            }
-            
-            // Skip proxy classes to avoid conflicts
-            if (str_ends_with($class, 'Proxy')) {
-                continue;
-            }
-            
-            // Only try to reflect classes that are likely to exist
-            if (!$this->isClassLoadable($class)) {
+            if (!$class || !$this->isClassLoadable($class)) {
                 continue;
             }
             
@@ -60,7 +75,7 @@ class AopCompilerPass implements CompilerPassInterface
                     $this->aspects[] = $class;
                     $aspectCount++;
                     
-                    echo "  ✅ Found aspect: $class\n";
+                    $this->logger->info('Found aspect', ['aspect_class' => $class]);
                     
                     // Collect advice from this aspect
                     foreach ($reflection->getMethods() as $method) {
@@ -71,12 +86,18 @@ class AopCompilerPass implements CompilerPassInterface
                     }
                 }
             } catch (\ReflectionException $e) {
-                // Skip classes that can't be reflected
+                $this->logger->debug('Could not reflect class', [
+                    'class' => $class,
+                    'error' => $e->getMessage()
+                ]);
                 continue;
             }
         }
         
-        echo "  📊 Total aspects: $aspectCount, Total advice: $adviceCount\n";
+        $this->logger->info('Aspect collection completed', [
+            'total_aspects' => $aspectCount, 
+            'total_advice' => $adviceCount
+        ]);
     }
 
     private function hasAspectAttribute(ReflectionClass $class): bool
@@ -105,36 +126,50 @@ class AopCompilerPass implements CompilerPassInterface
                         'aspect' => $aspectClass,
                         'method' => $method->getName(),
                         'pointcut' => $instance->pointcut,
-                        'type' => $adviceType
+                        'adviceType' => $adviceClass
                     ];
                     
-                    echo "    ✓ Found $adviceType advice: {$aspectClass}::{$method->getName()} -> {$instance->pointcut}\n";
+                    $this->logger->info('Found advice', [
+                        'advice_type' => $adviceType,
+                        'aspect_class' => $aspectClass,
+                        'method' => $method->getName(),
+                        'pointcut' => $instance->pointcut
+                    ]);
                 }
             } catch (\Exception $e) {
-                // Skip advice that can't be instantiated
+                $this->logger->warning('Failed to instantiate advice', [
+                    'advice_class' => $adviceClass,
+                    'aspect_class' => $aspectClass,
+                    'method' => $method->getName(),
+                    'error' => $e->getMessage()
+                ]);
                 continue;
             }
         }
     }
 
-    private function applyAdvice(ContainerBuilder $container): void
+    private function generateProxyClasses(): void
     {
-        echo "🏗️  AOP: Applying advice to services...\n";
+        $this->logger->info('Generating proxy classes');
+        
+        // Configure the proxy generator with our advice
+        $this->proxyGenerator->setAdviceMap($this->advices);
+        
+        // Scan aspects and generate proxies
+        $this->proxyGenerator->scanAspects();
+        $this->proxyGenerator->generateProxies();
+        
+        $this->logger->info('Proxy generation completed');
+    }
+
+    private function replaceServicesWithProxies(ContainerBuilder $container): void
+    {
+        $this->logger->info('Replacing services with proxies in container');
         
         foreach ($container->getDefinitions() as $id => $definition) {
             $class = $definition->getClass();
             
-            if (!$class) {
-                continue;
-            }
-            
-            // Skip proxy classes to avoid conflicts
-            if (str_ends_with($class, 'Proxy')) {
-                continue;
-            }
-            
-            // Only process classes that are likely to exist and be loadable
-            if (!$this->isClassLoadable($class)) {
+            if (!$class || !$this->isClassLoadable($class)) {
                 continue;
             }
             
@@ -142,7 +177,10 @@ class AopCompilerPass implements CompilerPassInterface
             $matchingAdvice = $this->findMatchingAdvice($class);
             
             if (!empty($matchingAdvice)) {
-                echo "  🔧 Applying AOP to service: $id ($class)\n";
+                $this->logger->info('Applying AOP to service', [
+                    'service_id' => $id,
+                    'target_class' => $class
+                ]);
                 
                 // Replace the service definition with a proxy
                 $this->replaceWithProxy($container, $id, $definition, $class);
@@ -156,9 +194,7 @@ class AopCompilerPass implements CompilerPassInterface
         
         foreach ($this->advices as $advice) {
             // Simple pointcut matching - you can enhance this
-            if (str_contains($advice['pointcut'], $class) || 
-                str_contains($advice['pointcut'], '*') ||
-                str_contains($advice['pointcut'], 'App\\Service\\')) {
+            if ($this->pointcutMatches($advice['pointcut'], $class)) {
                 $matchingAdvice[] = $advice;
             }
         }
@@ -166,38 +202,165 @@ class AopCompilerPass implements CompilerPassInterface
         return $matchingAdvice;
     }
 
+    private function pointcutMatches(string $pointcut, string $class): bool
+    {
+        // Handle wildcard patterns
+        if (str_contains($pointcut, '*')) {
+            $pattern = str_replace('*', '.*', $pointcut);
+            if (str_contains($pattern, '::')) {
+                $classPattern = explode('::', $pattern)[0];
+                // Escape backslashes for regex
+                $classPattern = str_replace('\\', '\\\\', $classPattern);
+                return (bool) preg_match('/^' . $classPattern . '$/', $class);
+            }
+            // Escape backslashes for regex
+            $pattern = str_replace('\\', '\\\\', $pattern);
+            return (bool) preg_match('/^' . $pattern . '$/', $class);
+        }
+        
+        // Handle specific class patterns
+        if (str_contains($pointcut, '::')) {
+            $classPattern = explode('::', $pointcut)[0];
+            return $class === $classPattern;
+        }
+        
+        return $class === $pointcut;
+    }
+
     private function replaceWithProxy(ContainerBuilder $container, string $id, Definition $definition, string $class): void
     {
-        // Create proxy class name
-        $proxyClass = $class . 'Proxy';
+        try {
+            $reflection = new ReflectionClass($class);
+            
+            // Determine proxy class name based on the generated proxy
+            $proxyClassName = $this->getProxyClassName($class);
+            
+            // Try to load the proxy class if it doesn't exist
+            if (!class_exists($proxyClassName)) {
+                // Try to manually include the proxy class file
+                $proxyFileName = $this->getProxyFileName($class);
+                if (file_exists($proxyFileName)) {
+                    require_once $proxyFileName;
+                }
+                
+                // Check again if the class exists
+                if (!class_exists($proxyClassName)) {
+                    $this->logger->warning('Proxy class not found, skipping service replacement', [
+                        'target_class' => $class,
+                        'proxy_class' => $proxyClassName
+                    ]);
+                    return;
+                }
+            }
+            
+            // Use decoration pattern: keep original service as .inner, wrap it with proxy
+            // This ensures the original service is properly instantiated
+            
+            // Create internal service ID for the original service
+            $innerServiceId = $id . '.inner';
+            
+            // Clone the original definition and register it with .inner suffix
+            $innerDefinition = clone $definition;
+            $innerDefinition->setPublic(false); // Make inner service private
+            $container->setDefinition($innerServiceId, $innerDefinition);
+            
+            // Create proxy definition that wraps the original
+            $proxyDefinition = new Definition($proxyClassName);
+            $proxyDefinition->setPublic($definition->isPublic());
+            $proxyDefinition->setLazy($definition->isLazy());
+            
+            // Proxy constructor expects: (targetInstance, container)
+            $proxyDefinition->setArguments([
+                new Reference($innerServiceId),  // The original service instance
+                new Reference('service_container')  // Container for aspect resolution
+            ]);
+            
+            // Copy method calls from original to proxy (they'll be delegated)
+            foreach ($definition->getMethodCalls() as $methodCall) {
+                $proxyDefinition->addMethodCall($methodCall[0], $methodCall[1]);
+            }
+            
+            // Replace the original definition with proxy
+            $container->setDefinition($id, $proxyDefinition);
+            
+            $this->logger->info('Replaced service with proxy using decoration pattern', [
+                'service_id' => $id,
+                'inner_service_id' => $innerServiceId,
+                'target_class' => $class,
+                'proxy_class' => $proxyClassName
+            ]);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to replace service with proxy', [
+                'service_id' => $id,
+                'target_class' => $class,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    private function getProxyClassName(string $originalClass): string
+    {
+        // Use the same logic as HybridProxyGenerator to generate proxy class name
+        $shortName = basename(str_replace('\\', '/', $originalClass));
         
-        // Create new definition for the proxy
-        $proxyDefinition = new Definition($proxyClass);
-        $proxyDefinition->setPublic($definition->isPublic());
-        $proxyDefinition->setLazy($definition->isLazy());
+        // Generate a hash for the class (similar to HybridProxyGenerator)
+        $hash = substr(md5($originalClass), 0, 8);
         
-        // Add container as constructor argument
-        $proxyDefinition->addArgument(new Reference('service_container'));
+        // Determine strategy (must match HybridProxyGenerator logic)
+        $strategy = $this->determineProxyStrategy($originalClass);
         
-        // Copy other constructor arguments from original definition
-        foreach ($definition->getArguments() as $argument) {
-            $proxyDefinition->addArgument($argument);
+        // Use the same namespace as HybridProxyGenerator
+        return 'App\\AOPProxies\\' . $shortName . '_' . $strategy . '_' . $hash;
+    }
+
+    private function getProxyFileName(string $originalClass): string
+    {
+        // Use the same logic as HybridProxyGenerator to generate proxy file name
+        $shortName = basename(str_replace('\\', '/', $originalClass));
+        
+        // Generate a hash for the class (similar to HybridProxyGenerator)
+        $hash = substr(md5($originalClass), 0, 8);
+        
+        // Determine strategy (must match HybridProxyGenerator logic)
+        $strategy = $this->determineProxyStrategy($originalClass);
+        
+        // Return the full path to the proxy file
+        return dirname(__DIR__, 2) . '/var/proxy-classes/' . $shortName . '_' . $strategy . '_' . $hash . '.php';
+    }
+
+    private function determineProxyStrategy(string $targetClass): string
+    {
+        if (!class_exists($targetClass)) {
+            return 'code_copying';
+        }
+
+        $reflection = new \ReflectionClass($targetClass);
+        
+        // Strategy 1: Final classes → Use delegation (code_copying) regardless of interfaces
+        // We can't extend final classes, so we must use composition/delegation
+        if ($reflection->isFinal()) {
+            return 'code_copying';
         }
         
-        // Copy method calls
-        foreach ($definition->getMethodCalls() as $methodCall) {
-            $proxyDefinition->addMethodCall($methodCall[0], $methodCall[1]);
+        // Strategy 2: Interface-based classes (not final) → Dynamic proxy
+        if ($reflection->isInterface()) {
+            return 'dynamic_proxy';
         }
         
-        // Copy properties
-        foreach ($definition->getProperties() as $property => $value) {
-            $proxyDefinition->setProperty($property, $value);
+        // Strategy 3: Non-final classes implementing interfaces → Dynamic proxy
+        if (!empty($reflection->getInterfaces())) {
+            return 'dynamic_proxy';
         }
         
-        // Replace the original definition
-        $container->setDefinition($id, $proxyDefinition);
+        // Strategy 4: Non-final classes without interfaces → Extending proxy
+        if (!$reflection->isAbstract() && !$reflection->isTrait()) {
+            return 'extending';
+        }
         
-        echo "    ✅ Replaced with proxy: $proxyClass\n";
+        // Strategy 5: Fallback
+        return 'code_copying';
     }
 
     private function isClassLoadable(string $class): bool

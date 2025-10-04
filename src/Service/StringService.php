@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-class StringService
+final class StringService implements StringServiceInterface
 {
     public function processString(string $input): string
     {
@@ -35,4 +35,3 @@ class StringService
         return "Safely processed: " . $input;
     }
 }
-

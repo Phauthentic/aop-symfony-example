@@ -17,7 +17,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class StringTestCommand extends Command
 {
     public function __construct(
-        private StringService $stringService
+        private object $stringService
     )
     {
         parent::__construct();
