@@ -22,3 +22,11 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+    
+    # Alias interface to implementation for autowiring
+    App\Service\StringServiceInterface: '@App\Service\StringService'
+    
+    # Make all aspects public so proxies can retrieve them from the container
+    App\Aspects\:
+        resource: '../src/Aspects/'
+        public: true
