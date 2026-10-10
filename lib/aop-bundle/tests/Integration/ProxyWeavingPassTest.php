@@ -20,6 +20,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\SelfCallingService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -46,6 +47,7 @@ final class ProxyWeavingPassTest extends TestCase
         $container->register(FactoryCreatedService::class.'.with_file', FactoryCreatedService::class)->setPublic(true)->setFile(__FILE__);
         $container->register(LazyService::class, LazyService::class)->setPublic(true)->setLazy(true);
         $container->register(FinalNoInterfaceService::class, FinalNoInterfaceService::class)->setPublic(true);
+        $container->register(SelfCallingService::class, SelfCallingService::class)->setPublic(true);
         $container->register(OrderSubscriber::class, OrderSubscriber::class)->addTag('kernel.event_subscriber');
         $container->register('fixture.untagged_subscriber', OrderSubscriber::class)->setPublic(true);
         $container->register(ExcludedService::class, ExcludedService::class)->setPublic(true);
@@ -55,11 +57,11 @@ final class ProxyWeavingPassTest extends TestCase
     }
 
     /**
-     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>}
+     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>}
      */
     private static function report(ContainerBuilder $container): array
     {
-        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>} $report */
+        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>} $report */
         $report = $container->getParameter('phauthentic_aop.weaving_report');
 
         return $report;
@@ -216,6 +218,20 @@ final class ProxyWeavingPassTest extends TestCase
         self::assertSame(FinalNoInterfaceService::class, $report['skipped'][FinalNoInterfaceService::class]['class']);
         self::assertStringContainsString('final', $report['skipped'][FinalNoInterfaceService::class]['reason']);
         self::assertArrayNotHasKey(ExcludedService::class, $report['advised'] + $report['skipped']);
+    }
+
+    #[Test]
+    public function reportListsSelfInvocationsOfInterfaceProxiedServicesOnly(): void
+    {
+        $report = self::report($this->compiled());
+        $file = (string) (new \ReflectionClass(SelfCallingService::class))->getFileName();
+
+        self::assertSame(
+            [['caller' => 'outer', 'method' => 'inner', 'file' => $file, 'line' => 11]],
+            $report['advised'][SelfCallingService::class]['selfInvocations'] ?? null,
+        );
+        self::assertSame([], $report['advised'][FinalService::class]['selfInvocations'] ?? null);
+        self::assertArrayNotHasKey('selfInvocations', $report['advised']['fixture.service']);
     }
 
     #[Test]

@@ -164,6 +164,22 @@ The Advice column lists advisors in chain order (outermost first).
 An advisor appears as soon as its static pointcut half matches; `args()` and other runtime conditions are checked per call and are not reflected here.
 Services with no matching advice at all are not listed.
 
+For services woven with the interface strategy, the weaving pass scans the target class file for `$this->name(` calls to advised methods.
+They bypass advice, so `debug:aop` lists them in a separate section, computed at compile time:
+
+```
+Self-invocations that bypass advice
+-----------------------------------
+
+ * App\Service\OrderService  App\Service\OrderService::placeOrder() -> audit()  /app/src/Service/OrderService.php:23
+
+ Inside an interface-proxied target $this is the plain object. Call AopContext::currentProxy()->method() instead.
+```
+
+The scan is a token scan of one file per service.
+It does not see calls through other variables or dynamic method names, and is skipped when the class has no file.
+The section is omitted when nothing is found.
+
 A skipped entry looks like:
 
 ```

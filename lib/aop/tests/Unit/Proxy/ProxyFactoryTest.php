@@ -28,6 +28,8 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\NewStaticTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReaderRepo;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\RepoInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingFinal;
+use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SignatureShapes;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -131,6 +133,16 @@ final class ProxyFactoryTest extends TestCase
         self::assertSame(['around>greet', 'greet', 'around<'], Log::$entries, 'this(FinalWithInterface) must not match an interface proxy');
         self::assertSame($proxy, $this->aspect->joinPoints[0]->getThis());
         self::assertSame($target, $this->aspect->joinPoints[0]->getTarget());
+    }
+
+    #[Test]
+    public function interfaceProxyTargetAdvisesItsSelfCallThroughAopContext(): void
+    {
+        $proxy = $this->factory()->createProxy(new SelfCallingFinal());
+
+        self::assertInstanceOf(SelfCallingInterface::class, $proxy);
+        self::assertSame('outer>inner', $proxy->outer());
+        self::assertSame(['around>outer', 'around>inner', 'around<', 'around<'], Log::$entries);
     }
 
     #[Test]

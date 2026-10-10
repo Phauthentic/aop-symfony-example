@@ -105,6 +105,8 @@ public function before(string $name): void
 
 `MethodSignature::className` is the class that declares the method, which may be a parent of the target class.
 
+Outside advice, a target can reach its own proxy with `AopContext::currentProxy()`; see [Proxies](proxies.md#self-invocation-and-aopcontext).
+
 ## Ordering
 
 `AdvisorRegistry` sorts all advisors once with `AdvisorOrderComparator`.

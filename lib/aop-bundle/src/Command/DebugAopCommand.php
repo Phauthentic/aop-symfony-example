@@ -14,7 +14,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class DebugAopCommand extends Command
 {
     /**
-     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>} $report
+     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>} $report
      */
     public function __construct(private readonly array $report)
     {
@@ -32,6 +32,18 @@ final class DebugAopCommand extends Command
                 $rows[] = [$id, $service['strategy'], $method, implode("\n", $advisors)];
             }
         }[] === $rows ? $io->text('No service is advised.') : $io->table(['Service', 'Strategy', 'Method', 'Advice'], $rows);
+
+        $self = [];
+        foreach ($this->report['advised'] as $id => $service) {
+            foreach ($service['selfInvocations'] ?? [] as $call) {
+                $self[] = sprintf('%s  %s::%s() -> %s()  %s:%d', $id, $service['class'], $call['caller'], $call['method'], $call['file'], $call['line']);
+            }
+        }
+        if ([] !== $self) {
+            $io->section('Self-invocations that bypass advice');
+            $io->listing($self);
+            $io->text('Inside an interface-proxied target $this is the plain object. Call AopContext::currentProxy()->method() instead.');
+        }
 
         $io->section('Skipped services');
         $skipped = [];

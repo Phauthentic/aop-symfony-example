@@ -47,7 +47,12 @@ final class AopRuntime
     {
         [$interceptors, $signature, $arounds] = $this->chains[$proxy::class.'::'.$method] ??= $this->build($proxy, $class, $method);
 
-        $result = (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+        AopContext::push($proxy);
+        try {
+            $result = (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+        } finally {
+            AopContext::pop();
+        }
 
         // Only an Around advice can replace the target's result; the target itself is type-checked by PHP.
         if ([] !== $arounds && !ReturnTypeCheck::accepts($signature->method->getReturnType(), $result, $proxy, $target, $signature->className)) {

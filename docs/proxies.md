@@ -228,11 +228,36 @@ Points to notice:
 - Constant default values are made absolute (`\App\Foo::BAR`); non-public constants are inlined by value.
 - Abstract and final modifiers are removed; visibility stays public or protected.
 
+## Self-invocation and `AopContext`
+
+`Phauthentic\AOP\Runtime\AopContext::currentProxy()` returns the proxy whose advised method is currently executing.
+It mirrors Spring's `AopContext.currentProxy()`.
+`AopRuntime::invoke()` sets it for the whole invocation, advice included, and restores the previous value in a `finally` block.
+Nested calls through other proxies therefore restore the outer proxy, also after an exception.
+Outside an advised call it returns `null`.
+It never throws.
+Unlike Spring there is no `exposeProxy` switch: the context is always maintained, because a push and a pop per call is cheap.
+
+```php
+final class OrderService implements OrderServiceInterface
+{
+    public function placeOrder(Order $order): void
+    {
+        $proxy = AopContext::currentProxy();
+        \assert($proxy instanceof OrderServiceInterface);
+        $proxy->audit($order); // advised, `$this->audit($order)` would not be
+    }
+}
+```
+
+With the subclass strategy `$this` already is the proxy, so you do not need it there.
+
 ## Limitations
 
 - Self-invocation with interface proxies is not advised.
   Inside the target `$this` is the plain object, so `$this->other()` bypasses the proxy.
-  Use the subclass strategy (make the class non-final) if you need it.
+  Call `AopContext::currentProxy()->other()` instead (see below), or use the subclass strategy (make the class non-final).
+  `bin/console debug:aop` lists the `$this->advisedMethod()` calls it finds in interface-proxied classes.
 - `new self` inside a subclass-proxied target creates a plain, unadvised target.
   `new static` creates another proxy instance, which is advised.
 - By-reference parameters and return values disable advice for that method.

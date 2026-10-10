@@ -62,6 +62,7 @@ bin/console app:aop-demo   # runs the demo scenarios
 | `within`, `this`, `target`, `args`, `bean` | same |
 | `@annotation`, `@within`, `@target`, `@args` | same, matching PHP attributes |
 | `argNames` | not needed, PHP reflection provides parameter names |
+| `AopContext.currentProxy()` | `AopContext::currentProxy()` |
 | JDK dynamic proxy | interface proxy |
 | CGLIB proxy | subclass proxy |
 | `@DeclareParents`, `perthis` | not supported |
@@ -82,7 +83,7 @@ Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop
 
 - Only method execution is a join point.
 - No introductions and no `perthis`/`pertarget`.
-- Interface proxies skip self-invocation.
+- Interface proxies skip self-invocation; use `AopContext::currentProxy()`, `debug:aop` lists the affected calls.
 - By-reference parameters and return values are not advised.
 - Private, static, final (subclass strategy) and magic methods are not advised.
 

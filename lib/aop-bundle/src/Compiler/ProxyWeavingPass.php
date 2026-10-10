@@ -29,7 +29,7 @@ use Symfony\Component\DependencyInjection\Reference;
 /**
  * Replaces advised services by generated proxies and records what it did in the weaving report.
  *
- * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>}
+ * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>}
  */
 final class ProxyWeavingPass implements CompilerPassInterface
 {
@@ -116,6 +116,9 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
             $runtime->addMethodCall('registerBeanName', [$proxy->className, $id]);
             $report['advised'][$id] = ['class' => $class, 'proxy' => $proxy->className, 'strategy' => $strategy->value, 'methods' => $methods];
+            if (ProxyStrategy::INTERFACE === $strategy) {
+                $report['advised'][$id]['selfInvocations'] = SelfInvocationScanner::scan($target, array_keys($methods));
+            }
         }
 
         $container->setParameter(self::REPORT, $report);

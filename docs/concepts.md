@@ -44,6 +44,7 @@ The service classes stay unaware of it.
 | `argNames` | Not needed | PHP reflection knows parameter names. |
 | JDK dynamic proxy | Interface proxy | For final classes that implement an interface. |
 | CGLIB proxy | Subclass proxy | For non-final classes. Self-invocation is advised. |
+| `AopContext.currentProxy()` | `AopContext::currentProxy()` | Always available, no `exposeProxy` switch. Use it for self-invocation in interface-proxied targets. See [Proxies](proxies.md#self-invocation-and-aopcontext). |
 | `@DeclareParents`, introductions | Not supported | |
 | `perthis`, `pertarget` | Not supported | Aspects are singletons. |
 | `call`, `cflow`, `get`, `set`, `withincode`, `if` | Not supported | Raise `UnsupportedPointcutDesignatorException`. |

@@ -15,6 +15,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\SelfCallingService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -80,6 +81,7 @@ final class TestKernel extends Kernel
         $services->set(CallsService::class)->call('setPrefix', ['pre-'])->public();
         $services->set(FactoryCreatedService::class)->factory([FactoryCreatedService::class, 'create'])->public();
         $services->set(FinalNoInterfaceService::class)->public();
+        $services->set(SelfCallingService::class)->public();
         $services->set(OrderSubscriber::class);
         $services->set(ExcludedService::class)->public();
         $services->set(LogAspect::class);
