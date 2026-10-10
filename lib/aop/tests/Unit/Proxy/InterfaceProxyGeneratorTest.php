@@ -8,6 +8,10 @@ use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\InterfaceProxyGenerator;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\FinalWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
@@ -172,5 +176,50 @@ final class InterfaceProxyGeneratorTest extends TestCase
             $proxy->scaleAll(10, $x, $y);
             self::assertSame([10, 20], [$x, $y], 'unadvised interface methods delegate by reference too');
         }
+    }
+
+    /**
+     * @param list<string> $methods
+     */
+    private function introducing(array $methods = []): string
+    {
+        $generated = (new InterfaceProxyGenerator())->generate(new \ReflectionClass(FinalWorkTarget::class), $methods, $this->name(), [Auditable::class => AuditTrail::class]);
+        self::assertSame([Auditable::class => AuditTrail::class], $generated->introductions);
+
+        return ProxyClassWriter::load($generated);
+    }
+
+    #[Test]
+    public function introducedInterfaceIsImplementedByDelegatingToOneDefaultImplementationPerProxy(): void
+    {
+        $class = $this->introducing();
+        $created = AuditTrail::$created;
+        $first = new $class(new FinalWorkTarget());
+        $second = new $class(new FinalWorkTarget());
+        self::assertInstanceOf(WorkInterface::class, $first);
+        self::assertInstanceOf(Auditable::class, $first);
+        self::assertInstanceOf(Auditable::class, $second);
+
+        $first->recordAudit('a');
+        $first->recordAudit('b');
+        $second->recordAudit('c');
+
+        self::assertSame(['a', 'b'], $first->auditTrail());
+        self::assertSame(['c'], $second->auditTrail());
+        self::assertSame($created + 2, AuditTrail::$created);
+        self::assertSame('worked x', $first->work('x'));
+    }
+
+    #[Test]
+    public function advisedIntroducedMethodsRouteThroughTheRuntime(): void
+    {
+        $class = $this->introducing(['auditTrail', 'recordAudit', 'work']);
+        $proxy = new $class(new FinalWorkTarget());
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        $proxy->__aopSetRuntime(ProxyTestHelper::emptyRuntime());
+
+        self::assertInstanceOf(Auditable::class, $proxy);
+        $proxy->recordAudit('a');
+        self::assertSame(['a'], $proxy->auditTrail());
     }
 }

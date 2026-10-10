@@ -8,6 +8,8 @@ use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Log;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
@@ -72,6 +74,22 @@ final class KernelBootTest extends TestCase
         $name = ' y ';
         $service->normalize($name);
         self::assertSame('y', $name, 'by-reference parameters write through the proxy');
+    }
+
+    #[Test]
+    public function introducedInterfaceIsImplementedAndItsMethodsAreAdvised(): void
+    {
+        $service = self::container()->get('fixture.audited');
+
+        self::assertInstanceOf(AuditedService::class, $service);
+        self::assertInstanceOf(Auditable::class, $service);
+        self::assertSame('worked', $service->work());
+        self::assertSame(['work'], $service->auditTrail());
+        self::assertSame(
+            ['around>work', 'work', 'around<', 'around>recordAudit', 'around<', 'around>auditTrail', 'around<'],
+            Log::$entries,
+            'this(auditable) binds the proxy, and introduced methods are advised like any other',
+        );
     }
 
     #[Test]

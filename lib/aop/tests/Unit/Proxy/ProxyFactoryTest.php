@@ -11,10 +11,18 @@ use Phauthentic\AOP\Exception\ProxyGenerationException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyFactory;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionOnlyAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\RefAroundAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\RefBeforeAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\WrongReturnAspect;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\BareTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\FinalWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ReadonlyWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Service\Greeter;
 use Phauthentic\AOP\Tests\Fixtures\Targets\Builder;
@@ -445,5 +453,52 @@ final class ProxyFactoryTest extends TestCase
         $n = 1;
         $proxy->increment($n);
         self::assertSame(1, $n);
+    }
+
+    /**
+     * @return iterable<string, array{ProxyStrategy|null, class-string}>
+     */
+    public static function introductionTargets(): iterable
+    {
+        yield 'subclass' => [null, WorkTarget::class];
+        yield 'subclass, readonly target' => [null, ReadonlyWorkTarget::class];
+        yield 'interface' => [ProxyStrategy::INTERFACE, FinalWorkTarget::class];
+    }
+
+    /**
+     * @param class-string $class
+     */
+    #[Test]
+    #[DataProvider('introductionTargets')]
+    public function introducedInterfaceIsUsableAndAdvisable(?ProxyStrategy $strategy, string $class): void
+    {
+        $factory = ProxyFactory::fromAspects([new IntroductionAspect()], $strategy);
+        $proxy = match ($class) {
+            WorkTarget::class => $factory->newInstance(WorkTarget::class),
+            ReadonlyWorkTarget::class => $factory->newInstance(ReadonlyWorkTarget::class, ['worked ']),
+            default => $factory->createProxy(new FinalWorkTarget()),
+        };
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        self::assertInstanceOf(Auditable::class, $proxy);
+        self::assertInstanceOf(WorkInterface::class, $proxy);
+
+        self::assertSame('worked x', $proxy->work('x'));
+        self::assertSame(['introduced recordAudit'], Log::$entries, 'this(auditable) bound the proxy, so the recording call was advised too');
+
+        Log::reset();
+        self::assertSame(['work(x)'], $proxy->auditTrail());
+        self::assertSame(['introduced auditTrail'], Log::$entries, 'execution(* Auditable::*(..)) matches introduced methods, target() and within() do not');
+    }
+
+    #[Test]
+    public function aClassWithOnlyAnIntroductionStillGetsAProxy(): void
+    {
+        $proxy = ProxyFactory::fromAspects([new IntroductionOnlyAspect()])->newInstance(BareTarget::class);
+
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        self::assertInstanceOf(Auditable::class, $proxy);
+        $proxy->recordAudit('a');
+        self::assertSame(['a'], $proxy->auditTrail());
+        self::assertSame('bare', $proxy->value());
     }
 }

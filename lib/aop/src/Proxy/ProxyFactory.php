@@ -7,6 +7,7 @@ namespace Phauthentic\AOP\Proxy;
 use Phauthentic\AOP\Advisor\AdvisorChainFactory;
 use Phauthentic\AOP\Advisor\AdvisorFactory;
 use Phauthentic\AOP\Advisor\AdvisorRegistry;
+use Phauthentic\AOP\Advisor\IntroductionAdvisor;
 use Phauthentic\AOP\Advisor\MetadataNamedPointcutResolver;
 use Phauthentic\AOP\Aspect\ArrayAspectInstanceResolver;
 use Phauthentic\AOP\Aspect\AspectInstanceResolverInterface;
@@ -22,6 +23,7 @@ use Phauthentic\AOP\Runtime\AopRuntime;
 final class ProxyFactory
 {
     private readonly AdvisorChainFactory $chains;
+    private readonly AdvisorRegistry $advisors;
     private readonly ProxyStrategyResolver $strategies;
     private ?AopRuntime $runtime = null;
 
@@ -38,6 +40,7 @@ final class ProxyFactory
         private readonly ?ProxyStrategy $strategy = null,
         private readonly ?string $cacheDir = null,
     ) {
+        $this->advisors = $advisors;
         $this->chains = new AdvisorChainFactory($advisors, $aspects, new ParameterBinder());
         $this->strategies = new ProxyStrategyResolver();
     }
@@ -58,11 +61,13 @@ final class ProxyFactory
         $pointcuts = new MetadataNamedPointcutResolver($metadata, $reader);
         $factory = new AdvisorFactory();
         $advisors = [];
+        $introductions = [];
         foreach ($metadata as $meta) {
             array_push($advisors, ...$factory->fromMetadata($meta, $pointcuts));
+            array_push($introductions, ...$factory->introductionsFromMetadata($meta));
         }
 
-        return new self(new AdvisorRegistry($advisors), new ArrayAspectInstanceResolver($instances), $strategy, $cacheDir);
+        return new self(new AdvisorRegistry($advisors, $introductions), new ArrayAspectInstanceResolver($instances), $strategy, $cacheDir);
     }
 
     /**
@@ -75,7 +80,7 @@ final class ProxyFactory
     }
 
     /**
-     * Returns the proxy class name, or `$class` itself when no advisor matches.
+     * Returns the proxy class name, or `$class` itself when no advisor and no introduction matches.
      * A subclass proxy is constructed like the target; an interface proxy takes the target instance.
      *
      * @param class-string $class
@@ -95,8 +100,9 @@ final class ProxyFactory
         }
 
         $strategy = $this->strategies->resolve($target, $this->strategy);
-        $methods = $this->advisedMethods($target, $strategy ?? ProxyStrategy::SUBCLASS, $beanName);
-        if ([] === $methods) {
+        $introductions = array_map(static fn (IntroductionAdvisor $i): string => $i->defaultImpl, $this->advisors->introductionsFor($target));
+        $methods = $this->advisedMethods($target, $strategy ?? ProxyStrategy::SUBCLASS, $beanName, array_keys($introductions));
+        if ([] === $methods && [] === $introductions) {
             return $this->classes[$key] = $class;
         }
         if (null === $strategy) {
@@ -104,7 +110,7 @@ final class ProxyFactory
         }
 
         $generator = ProxyStrategy::SUBCLASS === $strategy ? new SubclassProxyGenerator() : new InterfaceProxyGenerator();
-        $proxy = $generator->generate($target, $methods, $beanName ?? '');
+        $proxy = $generator->generate($target, $methods, $beanName ?? '', $introductions);
         $proxyClass = ProxyClassWriter::load($proxy, $this->cacheDir);
         if (null !== $beanName) {
             $this->runtime()->registerBeanName($proxyClass, $beanName);
@@ -162,14 +168,15 @@ final class ProxyFactory
 
     /**
      * @param \ReflectionClass<object> $target
+     * @param list<class-string>       $introduced
      *
      * @return list<string>
      */
-    private function advisedMethods(\ReflectionClass $target, ProxyStrategy $strategy, ?string $beanName): array
+    private function advisedMethods(\ReflectionClass $target, ProxyStrategy $strategy, ?string $beanName, array $introduced): array
     {
-        $context = new StaticMatchContext($target, $beanName, $strategy);
+        $context = new StaticMatchContext($target, $beanName, $strategy, $introduced);
         $methods = [];
-        foreach ($target->getMethods() as $method) {
+        foreach ([...$target->getMethods(), ...array_values(MethodEligibility::introducedMethods($target, $introduced))] as $method) {
             if (null === MethodEligibility::reasonForExclusion($method, $strategy, $target)
                 && [] !== $this->chains->matchedAdvisors($target, $method, $context)) {
                 $methods[] = $method->getName();

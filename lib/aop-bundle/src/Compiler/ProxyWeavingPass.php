@@ -6,6 +6,7 @@ namespace Phauthentic\AOP\Symfony\Compiler;
 
 use Phauthentic\AOP\Advisor\Advisor;
 use Phauthentic\AOP\Advisor\AdvisorChainFactory;
+use Phauthentic\AOP\Advisor\IntroductionAdvisor;
 use Phauthentic\AOP\Aspect\ArrayAspectInstanceResolver;
 use Phauthentic\AOP\Attribute\Aspect;
 use Phauthentic\AOP\Binding\ParameterBinder;
@@ -29,7 +30,7 @@ use Symfony\Component\DependencyInjection\Reference;
 /**
  * Replaces advised services by generated proxies and records what it did in the weaving report.
  *
- * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>}
+ * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
  */
 final class ProxyWeavingPass implements CompilerPassInterface
 {
@@ -49,7 +50,8 @@ final class ProxyWeavingPass implements CompilerPassInterface
         }
 
         $bag = $container->getParameterBag();
-        $chains = new AdvisorChainFactory(AdvisorRegistryFactory::create(self::aspectClasses($container)), new ArrayAspectInstanceResolver([]), new ParameterBinder());
+        $registry = AdvisorRegistryFactory::create(self::aspectClasses($container));
+        $chains = new AdvisorChainFactory($registry, new ArrayAspectInstanceResolver([]), new ParameterBinder());
         $proxyDir = self::stringParameter($container, self::PROXY_DIR);
         $writer = new ProxyClassWriter($proxyDir);
         $configured = 'auto' === ($strategy = self::stringParameter($container, self::PROXY_STRATEGY)) ? null : ProxyStrategy::from($strategy);
@@ -75,8 +77,9 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
 
             [$strategy, $reason] = self::strategy($target, $configured, $definition);
-            $methods = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id);
-            if ([] === $methods) {
+            $introductions = array_map(static fn (IntroductionAdvisor $i): string => $i->defaultImpl, $registry->introductionsFor($target));
+            $methods = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id, array_keys($introductions));
+            if ([] === $methods && [] === $introductions) {
                 continue;
             }
             if (null === $strategy) {
@@ -87,7 +90,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
             $generator = ProxyStrategy::SUBCLASS === $strategy ? new SubclassProxyGenerator() : new InterfaceProxyGenerator();
             // Salted with the service id (bean names are registered per proxy class) and the proxy directory, so a
             // build never reuses a proxy class loaded from another cache directory (e.g. during cache:clear).
-            $proxy = $generator->generate($target, array_keys($methods), $id."\0".$proxyDir);
+            $proxy = $generator->generate($target, array_keys($methods), $id."\0".$proxyDir, $introductions);
             $writer->write($proxy);
             // The dumper needs the class now, but it must not be loaded from its file: the dumper would then inline an
             // include of that file into lazy proxy class files using `$container->targetDir`, which is undefined there
@@ -116,6 +119,9 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
             $runtime->addMethodCall('registerBeanName', [$proxy->className, $id]);
             $report['advised'][$id] = ['class' => $class, 'proxy' => $proxy->className, 'strategy' => $strategy->value, 'methods' => $methods];
+            if ([] !== $introductions) {
+                $report['advised'][$id]['introductions'] = $introductions;
+            }
             if (ProxyStrategy::INTERFACE === $strategy) {
                 $report['advised'][$id]['selfInvocations'] = SelfInvocationScanner::scan($target, array_keys($methods));
             }
@@ -199,14 +205,15 @@ final class ProxyWeavingPass implements CompilerPassInterface
 
     /**
      * @param \ReflectionClass<object> $target
+     * @param list<class-string>       $introduced
      *
      * @return array<string, list<string>> method name => advisor ids
      */
-    private static function advisedMethods(AdvisorChainFactory $chains, \ReflectionClass $target, ProxyStrategy $strategy, string $id): array
+    private static function advisedMethods(AdvisorChainFactory $chains, \ReflectionClass $target, ProxyStrategy $strategy, string $id, array $introduced): array
     {
-        $context = new StaticMatchContext($target, $id, $strategy);
+        $context = new StaticMatchContext($target, $id, $strategy, $introduced);
         $methods = [];
-        foreach ($target->getMethods() as $method) {
+        foreach ([...$target->getMethods(), ...array_values(MethodEligibility::introducedMethods($target, $introduced))] as $method) {
             if (null !== MethodEligibility::reasonForExclusion($method, $strategy, $target)) {
                 continue;
             }

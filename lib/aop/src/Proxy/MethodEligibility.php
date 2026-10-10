@@ -18,7 +18,7 @@ final class MethodEligibility
         $reason = match (true) {
             $method->isPrivate() => 'private methods cannot be overridden',
             $method->isStatic() => 'static methods are not called on an instance',
-            $method->isAbstract() => 'abstract methods have no implementation to advise',
+            $method->isAbstract() && !self::isIntroduced($method) => 'abstract methods have no implementation to advise',
             str_starts_with($method->getName(), '__') => 'constructors, destructors and magic methods are never advised',
             $method->returnsReference() => 'methods returning by reference are not supported',
             ProxyStrategy::SUBCLASS === $strategy && $method->isFinal() => 'final methods cannot be overridden by a subclass proxy',
@@ -34,11 +34,35 @@ final class MethodEligibility
             }
         }
 
-        if (ProxyStrategy::INTERFACE === $strategy && !self::declaredByInterface($method, $target ?? $method->getDeclaringClass())) {
+        if (ProxyStrategy::INTERFACE === $strategy && !self::isIntroduced($method) && !self::declaredByInterface($method, $target ?? $method->getDeclaringClass())) {
             return 'interface proxies can only advise public methods declared by an interface of the target';
         }
 
         return null;
+    }
+
+    /**
+     * Methods of the introduced interfaces the target does not declare publicly. The proxy delegates them to the
+     * introduction's default implementation; they are advisable like target methods.
+     *
+     * @param \ReflectionClass<covariant object> $target
+     * @param list<class-string>                 $interfaces
+     *
+     * @return array<string, \ReflectionMethod> method name => interface method, the first interface declaring it wins
+     */
+    public static function introducedMethods(\ReflectionClass $target, array $interfaces): array
+    {
+        $methods = [];
+        foreach ($interfaces as $interface) {
+            foreach ((new \ReflectionClass($interface))->getMethods() as $method) {
+                $name = $method->getName();
+                if (!isset($methods[$name]) && !($target->hasMethod($name) && $target->getMethod($name)->isPublic())) {
+                    $methods[$name] = $method;
+                }
+            }
+        }
+
+        return $methods;
     }
 
     /**
@@ -55,6 +79,14 @@ final class MethodEligibility
             $class->isAbstract() => 'abstract classes cannot be proxied',
             default => null,
         };
+    }
+
+    /**
+     * Introduced methods come from an interface: the proxy implements them instead of overriding anything.
+     */
+    private static function isIntroduced(\ReflectionMethod $method): bool
+    {
+        return $method->getDeclaringClass()->isInterface();
     }
 
     /**

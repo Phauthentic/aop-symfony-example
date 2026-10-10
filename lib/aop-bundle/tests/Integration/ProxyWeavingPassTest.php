@@ -9,10 +9,14 @@ use Phauthentic\AOP\Proxy\ProxyClassName;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Symfony\Compiler\ProxyWeavingPass;
 use Phauthentic\AOP\Symfony\ProxyAutoloader;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
@@ -51,17 +55,19 @@ final class ProxyWeavingPassTest extends TestCase
         $container->register(OrderSubscriber::class, OrderSubscriber::class)->addTag('kernel.event_subscriber');
         $container->register('fixture.untagged_subscriber', OrderSubscriber::class)->setPublic(true);
         $container->register(ExcludedService::class, ExcludedService::class)->setPublic(true);
+        $container->register(AuditAspect::class, AuditAspect::class)->setAutoconfigured(true);
+        $container->register('fixture.audited', AuditedService::class)->setPublic(true);
         BundleContainer::compile($container);
 
         return $container;
     }
 
     /**
-     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>}
+     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
      */
     private static function report(ContainerBuilder $container): array
     {
-        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>} $report */
+        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>} $report */
         $report = $container->getParameter('phauthentic_aop.weaving_report');
 
         return $report;
@@ -221,6 +227,23 @@ final class ProxyWeavingPassTest extends TestCase
         self::assertSame(FinalNoInterfaceService::class, $report['skipped'][FinalNoInterfaceService::class]['class']);
         self::assertStringContainsString('final', $report['skipped'][FinalNoInterfaceService::class]['reason']);
         self::assertArrayNotHasKey(ExcludedService::class, $report['advised'] + $report['skipped']);
+    }
+
+    #[Test]
+    public function introductionsAreAppliedAndReported(): void
+    {
+        $container = $this->compiled();
+        $report = self::report($container);
+        $proxyClass = (string) $container->getDefinition('fixture.audited')->getClass();
+
+        self::assertTrue(is_subclass_of($proxyClass, AuditedService::class));
+        self::assertTrue(is_subclass_of($proxyClass, Auditable::class));
+        self::assertSame([Auditable::class => AuditTrail::class], $report['advised']['fixture.audited']['introductions'] ?? null);
+        self::assertSame(
+            ['work' => [AuditAspect::class.'::record', LogAspect::class.'::around'], 'recordAudit' => [LogAspect::class.'::around'], 'auditTrail' => [LogAspect::class.'::around']],
+            $report['advised']['fixture.audited']['methods'],
+        );
+        self::assertArrayNotHasKey('introductions', $report['advised']['fixture.service'], 'only services with introductions carry the key');
     }
 
     #[Test]

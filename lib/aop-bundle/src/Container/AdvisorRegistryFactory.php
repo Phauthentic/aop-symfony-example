@@ -20,7 +20,7 @@ use Phauthentic\AOP\Exception\AspectDefinitionException;
 final class AdvisorRegistryFactory
 {
     /**
-     * Also validates every pointcut and parameter binding.
+     * Also validates every pointcut, parameter binding and introduction.
      *
      * @param list<string> $aspectClasses
      *
@@ -40,7 +40,9 @@ final class AdvisorRegistryFactory
         $binder = new ParameterBinder();
 
         $advisors = [];
+        $introductions = [];
         foreach ($metadata as $meta) {
+            array_push($introductions, ...$factory->introductionsFromMetadata($meta));
             foreach ($meta->advices as $advice) {
                 try {
                     // One advice per call, so a failure can name its method.
@@ -55,6 +57,6 @@ final class AdvisorRegistryFactory
             }
         }
 
-        return new AdvisorRegistry($advisors);
+        return new AdvisorRegistry($advisors, $introductions);
     }
 }

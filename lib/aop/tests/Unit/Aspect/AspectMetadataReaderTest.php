@@ -6,8 +6,11 @@ namespace Phauthentic\AOP\Tests\Unit\Aspect;
 
 use Phauthentic\AOP\Advice\AdviceType;
 use Phauthentic\AOP\Aspect\AspectMetadataReader;
+use Phauthentic\AOP\Aspect\IntroductionDefinition;
 use Phauthentic\AOP\Exception\AspectDefinitionException;
 use Phauthentic\AOP\Tests\Fixtures\Aspect as F;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -49,6 +52,24 @@ final class AspectMetadataReaderTest extends TestCase
         self::assertSame(PHP_INT_MAX, (new AspectMetadataReader())->read(F\UnorderedAspect::class)->order);
     }
 
+    public function testReadsIntroductions(): void
+    {
+        $m = (new AspectMetadataReader())->read(F\IntroductionAspect::class);
+
+        self::assertEquals(
+            [new IntroductionDefinition('Phauthentic\AOP\Tests\Fixtures\Introduction\*WorkTarget', Auditable::class, AuditTrail::class)],
+            $m->introductions,
+        );
+        self::assertSame([], (new AspectMetadataReader())->read(F\OrderedAspect::class)->introductions);
+    }
+
+    public function testInvalidIntroductionNamesTheAspect(): void
+    {
+        $this->expectException(AspectDefinitionException::class);
+        $this->expectExceptionMessage(F\IntroducesUninstantiableAspect::class);
+        (new AspectMetadataReader())->read(F\IntroducesUninstantiableAspect::class);
+    }
+
     /** @return iterable<string, array{class-string, string}> */
     public static function invalid(): iterable
     {
@@ -58,6 +79,9 @@ final class AspectMetadataReaderTest extends TestCase
         yield 'two advice attributes' => [F\DoubleAdviceAspect::class, 'more than one'];
         yield 'pointcut non-void' => [F\BadPointcutReturnAspect::class, 'void'];
         yield 'pointcut params' => [F\BadPointcutParamsAspect::class, 'parameters'];
+        yield 'introduced type is a class' => [F\IntroducesClassAspect::class, 'is not an interface'];
+        yield 'default implementation misses the interface' => [F\IntroducesUnimplementedAspect::class, 'does not implement'];
+        yield 'default implementation needs constructor arguments' => [F\IntroducesUninstantiableAspect::class, 'without arguments'];
     }
 
     /**

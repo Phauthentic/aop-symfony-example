@@ -42,6 +42,12 @@ final class ProxyClassNameTest extends TestCase
         self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a', 'b']));
         self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], 'my.bean'));
         self::assertSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], ''));
+        self::assertSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], '', []));
+        self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], '', ['App\I' => 'App\Impl']));
+        self::assertNotSame(
+            ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], '', ['App\I' => 'App\Impl']),
+            ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], '', ['App\I' => 'App\OtherImpl']),
+        );
         self::assertMatchesRegularExpression('/^Phauthentic\\\\AOP\\\\Generated\\\\App\\\\XProxy_[0-9a-f]{12}$/', $base);
     }
 }

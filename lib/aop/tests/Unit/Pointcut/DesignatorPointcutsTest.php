@@ -27,6 +27,8 @@ use Phauthentic\AOP\Tests\Fixtures\Hierarchy\ReadableInterface;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\SpecialAudit;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\Sub\ExtraRepository;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\UserRepository;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -305,5 +307,24 @@ final class DesignatorPointcutsTest extends TestCase
         self::assertFalse($this->static($exact, Plain::class, bean: 'App\Service\OtherService'));
         self::assertTrue($this->static($glob, Plain::class, bean: 'App\Service\OtherService'));
         self::assertFalse($this->static($glob, Plain::class, bean: 'App\Controller\HomeController'));
+    }
+
+    #[Test]
+    public function thisMatchesIntroducedInterfacesButTargetAndWithinDoNot(): void
+    {
+        $target = Reflect::cls(WorkTarget::class);
+        $method = $target->getMethod('work');
+        foreach (ProxyStrategy::cases() as $strategy) {
+            $ctx = new StaticMatchContext($target, null, $strategy, [Auditable::class]);
+            $plain = new StaticMatchContext($target, null, $strategy);
+            $type = new TypePattern(Auditable::class);
+
+            self::assertTrue((new ThisPointcut($type))->matchesClass($target, $ctx), $strategy->value);
+            self::assertTrue((new ThisPointcut($type))->matchesMethod($method, $ctx), $strategy->value);
+            self::assertFalse((new ThisPointcut($type))->matchesMethod($method, $plain), $strategy->value);
+            self::assertTrue((new ThisPointcut(new TypePattern('Phauthentic\AOP\Tests\Fixtures\Introduction\Audit*')))->matchesMethod($method, $ctx), $strategy->value);
+            self::assertFalse((new TargetPointcut($type))->matchesMethod($method, $ctx), $strategy->value);
+            self::assertFalse((new WithinPointcut(new TypePattern(Auditable::class, false, true)))->matchesMethod($method, $ctx), $strategy->value);
+        }
     }
 }

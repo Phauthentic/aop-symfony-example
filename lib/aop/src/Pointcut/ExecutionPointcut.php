@@ -29,7 +29,7 @@ final class ExecutionPointcut implements PointcutInterface
         if (null === $this->declaringType) {
             return true;
         }
-        foreach (self::hierarchy($class) as $type) {
+        foreach ([...self::hierarchy($class), ...self::introduced($ctx)] as $type) {
             if ($this->declaringType->matchesType($type)) {
                 return true;
             }
@@ -44,7 +44,7 @@ final class ExecutionPointcut implements PointcutInterface
             && $this->name->matches($method->getName())
             && $this->params->matches($method)
             && (null === $this->returnType || $this->returnType->matchesDeclared($method->getReturnType()))
-            && $this->declaringTypeMatches($ctx->targetClass, $method->getName());
+            && $this->declaringTypeMatches($method->getName(), $ctx);
     }
 
     public function isRuntime(): bool
@@ -63,16 +63,35 @@ final class ExecutionPointcut implements PointcutInterface
     }
 
     /**
-     * The target class itself, or any ancestor/interface that declares the method.
-     *
-     * @param \ReflectionClass<object> $target
+     * A target method: the target class itself, or any ancestor/interface that declares it.
+     * An introduced method (the target has none of that name): the introduced interface, or any ancestor of it that declares it.
      */
-    private function declaringTypeMatches(\ReflectionClass $target, string $method): bool
+    private function declaringTypeMatches(string $method, StaticMatchContext $ctx): bool
     {
-        if (null === $this->declaringType || $this->declaringType->matchesType($target)) {
+        if (null === $this->declaringType) {
             return true;
         }
-        foreach (self::hierarchy($target) as $type) {
+        if ($ctx->targetClass->hasMethod($method)) {
+            return $this->declaredBy($ctx->targetClass, $method);
+        }
+        foreach (self::introduced($ctx) as $interface) {
+            if ($interface->hasMethod($method) && $this->declaredBy($interface, $method)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param \ReflectionClass<object> $root
+     */
+    private function declaredBy(\ReflectionClass $root, string $method): bool
+    {
+        if (null === $this->declaringType || $this->declaringType->matchesType($root)) {
+            return true;
+        }
+        foreach (self::hierarchy($root) as $type) {
             if ($type->hasMethod($method)
                 && $type->getMethod($method)->getDeclaringClass()->getName() === $type->getName()
                 && $this->declaringType->matchesType($type)
@@ -82,6 +101,14 @@ final class ExecutionPointcut implements PointcutInterface
         }
 
         return false;
+    }
+
+    /**
+     * @return list<\ReflectionClass<object>>
+     */
+    private static function introduced(StaticMatchContext $ctx): array
+    {
+        return array_map(static fn (string $interface): \ReflectionClass => new \ReflectionClass($interface), $ctx->introducedInterfaces);
     }
 
     /**

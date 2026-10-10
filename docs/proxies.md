@@ -22,6 +22,9 @@ This page covers the two strategies, how one is chosen, which classes and method
 | Target returns `$this` | The proxy (it is `$this`) | The proxy, via `__aopWrap()` |
 | Target returns another instance of its class | That instance, advised only if it is itself a proxy | A new proxy around it sharing the same runtime, via `__aopWrap()` |
 | Readonly target class | The proxy is readonly too | The proxy is readonly too |
+| Introduced interfaces | Implemented, delegating to one default implementation per proxy | Implemented, delegating to one default implementation per proxy |
+
+Introduced interfaces come from `#[DeclareParents]`; see [Introductions](introductions.md).
 
 ## Auto-selection
 

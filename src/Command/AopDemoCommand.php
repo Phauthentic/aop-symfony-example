@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Contract\Auditable;
 use App\Demo\Trace;
 use App\Service\OrderServiceInterface;
 use App\Service\StringServiceInterface;
@@ -36,6 +37,9 @@ final class AopDemoCommand extends Command
         }
         $output->writeln("flaky('x') = ".$this->strings->flaky('x'));
         $output->writeln("placeOrder('SKU-1', 2) = ".$this->orders->placeOrder('SKU-1', 2));
+        foreach (['StringService' => $this->strings, 'OrderService' => $this->orders] as $name => $service) {
+            $output->writeln(sprintf('%s audit trail: %s', $name, $service instanceof Auditable ? implode(', ', $service->auditTrail()) : 'not auditable'));
+        }
 
         $output->writeln('Trace:');
         foreach ($this->trace->lines as $line) {

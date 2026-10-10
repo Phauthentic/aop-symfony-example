@@ -10,6 +10,7 @@ use Phauthentic\AOP\Proxy\ProxyStrategy;
 /**
  * Subclass proxy: the proxy is a target subclass, so the whole target hierarchy counts.
  * Interface proxy: only the implemented interfaces count.
+ * Either way the proxy also implements the introduced interfaces.
  */
 final class ThisPointcut implements PointcutInterface
 {
@@ -22,12 +23,12 @@ final class ThisPointcut implements PointcutInterface
 
     public function matchesClass(\ReflectionClass $class, StaticMatchContext $ctx): bool
     {
-        return $this->test($class, $ctx->strategy);
+        return $this->test($class, $ctx);
     }
 
     public function matchesMethod(\ReflectionMethod $method, StaticMatchContext $ctx): bool
     {
-        return $this->test($ctx->targetClass, $ctx->strategy);
+        return $this->test($ctx->targetClass, $ctx);
     }
 
     public function matchesRuntime(RuntimeMatchContext $ctx): bool
@@ -42,12 +43,17 @@ final class ThisPointcut implements PointcutInterface
     /**
      * @param \ReflectionClass<object> $class
      */
-    private function test(\ReflectionClass $class, ProxyStrategy $strategy): bool
+    private function test(\ReflectionClass $class, StaticMatchContext $ctx): bool
     {
         if (null === $this->subjectType) {
             return true;
         }
-        if (ProxyStrategy::SUBCLASS === $strategy) {
+        foreach ($ctx->introducedInterfaces as $interface) {
+            if ($this->subjectType->matchesName($interface)) {
+                return true;
+            }
+        }
+        if (ProxyStrategy::SUBCLASS === $ctx->strategy) {
             return $this->subjectType->matchesType($class);
         }
         foreach ($class->getInterfaceNames() as $interface) {

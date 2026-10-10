@@ -14,7 +14,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class DebugAopCommand extends Command
 {
     /**
-     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>}>, skipped: array<string, array{class: string, reason: string}>} $report
+     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>} $report
      */
     public function __construct(private readonly array $report)
     {
@@ -32,6 +32,17 @@ final class DebugAopCommand extends Command
                 $rows[] = [$id, $service['strategy'], $method, implode("\n", $advisors)];
             }
         }[] === $rows ? $io->text('No service is advised.') : $io->table(['Service', 'Strategy', 'Method', 'Advice'], $rows);
+
+        $introduced = [];
+        foreach ($this->report['advised'] as $id => $service) {
+            foreach ($service['introductions'] ?? [] as $interface => $impl) {
+                $introduced[] = [$id, $interface, $impl];
+            }
+        }
+        if ([] !== $introduced) {
+            $io->section('Introduced interfaces');
+            $io->table(['Service', 'Interface', 'Default implementation'], $introduced);
+        }
 
         $self = [];
         foreach ($this->report['advised'] as $id => $service) {

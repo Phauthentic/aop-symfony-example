@@ -12,6 +12,8 @@ use Phauthentic\AOP\Interceptor\MethodInterceptorInterface;
 use Phauthentic\AOP\JoinPoint\MethodInvocation;
 use Phauthentic\AOP\JoinPoint\MethodSignature;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
+use Phauthentic\AOP\Proxy\AdvisedInterface;
+use Phauthentic\AOP\Proxy\MethodEligibility;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
 
 /**
@@ -72,8 +74,9 @@ final class AopRuntime
         // A subclass proxy is an instance of the target class, an interface proxy is not; `this()` matching depends on it.
         $strategy = $proxy instanceof $class ? ProxyStrategy::SUBCLASS : ProxyStrategy::INTERFACE;
         $rc = new \ReflectionClass($class);
-        $rm = $rc->getMethod($method);
-        $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy);
+        $introduced = self::introducedInterfaces($proxy, $rc);
+        $rm = $rc->hasMethod($method) ? $rc->getMethod($method) : MethodEligibility::introducedMethods($rc, $introduced)[$method];
+        $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy, $introduced);
         $advisors = $this->factory->matchedAdvisors($rc, $rm, $ctx);
         $arounds = array_values(array_map(
             static fn (Advisor $a): string => $a->id,
@@ -81,6 +84,24 @@ final class AopRuntime
         ));
 
         return [$this->factory->chainFor($advisors, $ctx), MethodSignature::fromReflection($rm), $arounds];
+    }
+
+    /**
+     * Interfaces the generated proxy class implements beyond the target's and AdvisedInterface. Subclasses of the
+     * proxy (e.g. lazy ghosts) are skipped, their own interfaces are not introductions.
+     *
+     * @param \ReflectionClass<object> $target
+     *
+     * @return list<class-string>
+     */
+    private static function introducedInterfaces(object $proxy, \ReflectionClass $target): array
+    {
+        $class = $proxy::class;
+        while (false !== ($parent = get_parent_class($class)) && is_a($parent, AdvisedInterface::class, true)) {
+            $class = $parent;
+        }
+
+        return array_values(array_diff(class_implements($class) ?: [], $target->getInterfaceNames(), [AdvisedInterface::class]));
     }
 
     /**

@@ -65,7 +65,8 @@ bin/console app:aop-demo   # runs the demo scenarios
 | `AopContext.currentProxy()` | `AopContext::currentProxy()` |
 | JDK dynamic proxy | interface proxy |
 | CGLIB proxy | subclass proxy |
-| `@DeclareParents`, `perthis` | not supported |
+| Introduction, `@DeclareParents` | `#[DeclareParents(typePattern, interface, defaultImpl)]` on the aspect class |
+| `perthis`, `pertarget` | not supported |
 
 ## Proxy strategies
 
@@ -82,7 +83,7 @@ Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop
 ## Limitations
 
 - Only method execution is a join point.
-- No introductions and no `perthis`/`pertarget`.
+- No `perthis`/`pertarget`.
 - Interface proxies skip self-invocation; use `AopContext::currentProxy()`, `debug:aop` lists the affected calls.
 - Methods returning by reference are not advised; methods with by-reference parameters are.
 - Private, static, final (subclass strategy) and magic methods are not advised.
@@ -95,6 +96,7 @@ Start at the [documentation index](docs/README.md).
 - [Pointcut expressions](docs/pointcuts.md): grammar, designators, patterns, binding, errors
 - [Advice](docs/advice.md): the five advice types, parameters, ordering
 - [Proxies](docs/proxies.md): strategies, eligibility, generated code, limitations
+- [Introductions](docs/introductions.md): `#[DeclareParents]`, introduced interfaces and their default implementations
 - [Symfony bundle](docs/symfony.md): installation, configuration, weaving, `debug:aop`, troubleshooting
 - [Standalone usage](docs/standalone.md): `ProxyFactory` without Symfony
 - [Examples](docs/examples.md): logging, validation, retry, caching, interface-proxied final class

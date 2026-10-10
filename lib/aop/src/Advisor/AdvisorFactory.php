@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Advisor;
 
 use Phauthentic\AOP\Aspect\AspectMetadata;
+use Phauthentic\AOP\Aspect\IntroductionDefinition;
 use Phauthentic\AOP\Binding\ParameterBinder;
 use Phauthentic\AOP\Pointcut\Expression\NamedPointcutResolverInterface;
 use Phauthentic\AOP\Pointcut\Expression\PointcutExpressionCompiler;
+use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
 
 final class AdvisorFactory
 {
@@ -28,5 +30,22 @@ final class AdvisorFactory
         }
 
         return $advisors;
+    }
+
+    /**
+     * @return list<IntroductionAdvisor>
+     */
+    public function introductionsFromMetadata(AspectMetadata $meta): array
+    {
+        return array_map(
+            static fn (IntroductionDefinition $i): IntroductionAdvisor => new IntroductionAdvisor(
+                $meta->aspectClass,
+                new TypePattern(rtrim($i->typePattern, '+'), false, str_ends_with($i->typePattern, '+')),
+                $i->interface,
+                $i->defaultImpl,
+                $meta->order,
+            ),
+            $meta->introductions,
+        );
     }
 }

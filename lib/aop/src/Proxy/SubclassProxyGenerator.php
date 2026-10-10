@@ -14,15 +14,19 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
     {
     }
 
-    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = ''): GeneratedProxy
+    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = '', array $introductions = []): GeneratedProxy
     {
         sort($advisedMethods);
-        $className = ProxyClassName::for($target->getName(), ProxyStrategy::SUBCLASS, $advisedMethods, $salt);
+        ksort($introductions);
+        $className = ProxyClassName::for($target->getName(), ProxyStrategy::SUBCLASS, $advisedMethods, $salt, $introductions);
         [$file, $class] = $this->builder->createClass($className, $target);
         $class->setExtends($target->getName());
         $class->addMethod('__aopGetTarget')->setPublic()->setReturnType('object')->setBody('return $this;');
 
-        foreach ($advisedMethods as $name) {
+        $this->builder->addIntroductions($class, $target, $introductions, $advisedMethods, '$this');
+
+        // Advised introduced methods were added above.
+        foreach (array_filter($advisedMethods, $target->hasMethod(...)) as $name) {
             $method = $target->getMethod($name);
             $args = $this->builder->forwardedArguments($method);
             $direct = sprintf('parent::%s(%s)', $name, $args);
@@ -42,6 +46,6 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
             ));
         }
 
-        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::SUBCLASS, $advisedMethods);
+        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::SUBCLASS, $advisedMethods, $introductions);
     }
 }

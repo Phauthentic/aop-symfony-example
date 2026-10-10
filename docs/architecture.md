@@ -46,13 +46,13 @@ flowchart LR
 
 | Namespace | Classes | Responsibility |
 |---|---|---|
-| `Attribute` | `Aspect`, `Order`, `Pointcut`, `Before`, `After`, `Around`, `AfterReturning`, `AfterThrowing`, `Proxyable` | The user-facing attributes. Data only. |
+| `Attribute` | `Aspect`, `Order`, `Pointcut`, `Before`, `After`, `Around`, `AfterReturning`, `AfterThrowing`, `DeclareParents`, `Proxyable` | The user-facing attributes. Data only. |
 | `Advice` | `AdviceType` (enum with `precedence()` and `attributeClass()`), `AdviceDefinition` | One advice method as data: aspect class, method, type, expression, `returning`/`throwing`, declaration index. |
-| `Aspect` | `AspectMetadataReader`, `AspectMetadata`, `AspectInstanceResolverInterface`, `ArrayAspectInstanceResolver` | Reflection of an aspect class into metadata; supply of aspect instances at runtime. |
+| `Aspect` | `AspectMetadataReader`, `AspectMetadata`, `IntroductionDefinition`, `AspectInstanceResolverInterface`, `ArrayAspectInstanceResolver` | Reflection of an aspect class into metadata (advice, named pointcuts, introductions); supply of aspect instances at runtime. |
 | `Pointcut\Expression` | `Lexer`, `Token`, `TokenType`, `Parser`, `Ast\*`, `PointcutExpressionCompiler`, `NamedPointcutResolverInterface` | Text to AST to `PointcutInterface` tree. The compiler also turns bare identifiers into `BindingSpec`s. |
 | `Pointcut\Pattern` | `TypePattern`, `NamePattern`, `ParameterPattern`, `ModifierPattern`, `ArgumentMatcher` | Reusable matchers for names, types, parameter lists and runtime argument values. |
 | `Pointcut` | `PointcutInterface`, one class per designator, `AndPointcut`, `OrPointcut`, `NotPointcut`, `TruePointcut`, `StaticMatchContext`, `RuntimeMatchContext`, `RuntimeEvaluation`, `BindingSpec`, `BindingKind`, traits `SubjectBinding` and `ArgumentList` | The matching logic, split into static and runtime halves. |
-| `Advisor` | `Advisor`, `AdvisorFactory`, `AdvisorRegistry`, `AdvisorOrderComparator`, `AdvisorChainFactory`, `MetadataNamedPointcutResolver` | Metadata to advisors, sorting, and building the interceptor list for one method. |
+| `Advisor` | `Advisor`, `IntroductionAdvisor`, `AdvisorFactory`, `AdvisorRegistry`, `AdvisorOrderComparator`, `AdvisorChainFactory`, `MetadataNamedPointcutResolver` | Metadata to advisors and introductions, sorting, matching introductions to a target class, and building the interceptor list for one method. |
 | `Binding` | `ParameterBinder`, `BindingPlan`, `BoundArguments` | Decide once per advice where each parameter comes from; produce the argument list per call. |
 | `Interceptor` | `MethodInterceptorInterface`, `AdviceInvoker`, `BeforeAdviceInterceptor`, `AfterAdviceInterceptor`, `AfterReturningAdviceInterceptor`, `AfterThrowingAdviceInterceptor`, `AroundAdviceInterceptor`, `RuntimeGuardInterceptor` | One link of the chain per advisor. `RuntimeGuardInterceptor` wraps an interceptor whose pointcut needs per-call evaluation. |
 | `JoinPoint` | `JoinPointInterface`, `ProceedingJoinPointInterface`, `MethodInvocation`, `MethodSignature` | What advice sees. `MethodInvocation` is the chain walker. |

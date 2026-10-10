@@ -7,6 +7,8 @@ namespace Phauthentic\AOP\Symfony\Tests\Integration;
 use Phauthentic\AOP\Symfony\Command\DebugAopCommand;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
@@ -44,6 +46,8 @@ final class DebugAopCommandTest extends TestCase
         self::assertStringContainsString('final and implements no interface', $output);
         self::assertStringContainsString(OrderSubscriber::class, $output);
         self::assertStringContainsString('an interface proxy would hide method onOrderPlaced(), which tag kernel.event_subscriber may reference', $output);
+        self::assertStringContainsString('Introduced interfaces', $output);
+        self::assertMatchesRegularExpression('/fixture\.audited\s+'.preg_quote(Auditable::class, '/').'\s+'.preg_quote(AuditTrail::class, '/').'/', $output);
     }
 
     #[Test]

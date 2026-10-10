@@ -17,10 +17,11 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     {
     }
 
-    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = ''): GeneratedProxy
+    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = '', array $introductions = []): GeneratedProxy
     {
         sort($advisedMethods);
-        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods, $salt);
+        ksort($introductions);
+        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods, $salt, $introductions);
         [$file, $class] = $this->builder->createClass($className, $target);
 
         $interfaces = self::minimalInterfaces($target);
@@ -44,7 +45,9 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             PHP, self::TARGET, $target->getName()))
             ->addParameter('result')->setType('mixed');
 
-        foreach (self::interfaceMethodNames($target) as $name) {
+        $this->builder->addIntroductions($class, $target, $introductions, $advisedMethods, self::TARGET);
+
+        foreach (self::interfaceMethodNames($target, array_keys($introductions)) as $name) {
             // The target's own declaration is compatible with every interface declaring the method.
             $method = $target->getMethod($name);
             $signature = $this->builder->signature($method)->setStatic($method->isStatic());
@@ -75,7 +78,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             $class->addMember($signature->setBody($body));
         }
 
-        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::INTERFACE, $advisedMethods);
+        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::INTERFACE, $advisedMethods, $introductions);
     }
 
     /**
@@ -97,15 +100,24 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     }
 
     /**
-     * Names of all methods declared by the target's interfaces.
+     * Names of all methods declared by the target's interfaces, plus methods of introduced interfaces the target
+     * declares publicly itself (the proxy forwards those to the target instead of the default implementation).
      *
      * @param \ReflectionClass<covariant object> $target
+     * @param list<class-string>                 $introduced
      *
      * @return list<string>
      */
-    private static function interfaceMethodNames(\ReflectionClass $target): array
+    private static function interfaceMethodNames(\ReflectionClass $target, array $introduced): array
     {
         $names = [];
+        foreach ($introduced as $interface) {
+            foreach ((new \ReflectionClass($interface))->getMethods() as $method) {
+                if ($target->hasMethod($method->getName()) && $target->getMethod($method->getName())->isPublic()) {
+                    $names[$method->getName()] = true;
+                }
+            }
+        }
         foreach ($target->getInterfaces() as $interface) {
             if (AdvisedInterface::class === $interface->getName()) {
                 continue;

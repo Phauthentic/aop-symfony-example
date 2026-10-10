@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Symfony\Tests\Fixtures;
 
 use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
@@ -86,5 +88,7 @@ final class TestKernel extends Kernel
         $services->set(ExcludedService::class)->public();
         $services->set(LogAspect::class);
         $services->set(BeanAspect::class);
+        $services->set('fixture.audited', AuditedService::class)->public();
+        $services->set(AuditAspect::class);
     }
 }

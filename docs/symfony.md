@@ -136,23 +136,38 @@ $ bin/console debug:aop
 Advised services
 ----------------
 
- --------------------------- ----------- ------------ -------------------------------------
+ --------------------------- ----------- ------------ --------------------------------------------
   Service                     Strategy    Method       Advice
- --------------------------- ----------- ------------ -------------------------------------
-  App\Service\OrderService    interface   placeOrder   App\Aspect\LoggingAspect::before
+ --------------------------- ----------- ------------ --------------------------------------------
+  App\Service\OrderService    interface   placeOrder   App\Aspect\AuditIntroductionAspect::record
+                                                       App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
-  App\Service\StringService   subclass    reverse      App\Aspect\LoggingAspect::before
+  App\Service\StringService   subclass    reverse      App\Aspect\AuditIntroductionAspect::record
+                                                       App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
-  App\Service\StringService   subclass    upper        App\Aspect\LoggingAspect::before
+  App\Service\StringService   subclass    upper        App\Aspect\AuditIntroductionAspect::record
+                                                       App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\CachingAspect::around
-  App\Service\StringService   subclass    greet        App\Aspect\LoggingAspect::before
+  App\Service\StringService   subclass    greet        App\Aspect\AuditIntroductionAspect::record
+                                                       App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\ValidationAspect::before
-  App\Service\StringService   subclass    flaky        App\Aspect\LoggingAspect::before
+  App\Service\StringService   subclass    flaky        App\Aspect\AuditIntroductionAspect::record
+                                                       App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\RetryAspect::around
- --------------------------- ----------- ------------ -------------------------------------
+ --------------------------- ----------- ------------ --------------------------------------------
+
+Introduced interfaces
+---------------------
+
+ --------------------------- ------------------------ -------------------------
+  Service                     Interface                Default implementation
+ --------------------------- ------------------------ -------------------------
+  App\Service\OrderService    App\Contract\Auditable   App\Contract\AuditTrail
+  App\Service\StringService   App\Contract\Auditable   App\Contract\AuditTrail
+ --------------------------- ------------------------ -------------------------
 
 Skipped services
 ----------------
@@ -162,7 +177,8 @@ Skipped services
 
 The Advice column lists advisors in chain order (outermost first).
 An advisor appears as soon as its static pointcut half matches; `args()` and other runtime conditions are checked per call and are not reflected here.
-Services with no matching advice at all are not listed.
+Services with no matching advice at all are not listed, unless an introduction applies to them.
+The "Introduced interfaces" section lists, per service, each interface added by `#[DeclareParents]` and its default implementation (see [Introductions](introductions.md)).
 
 For services woven with the interface strategy, the weaving pass scans the target class file for `$this->name(` calls to advised methods.
 They bypass advice, so `debug:aop` lists them in a separate section, computed at compile time:

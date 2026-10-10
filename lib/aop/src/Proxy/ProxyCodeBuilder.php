@@ -61,6 +61,69 @@ final class ProxyCodeBuilder
     }
 
     /**
+     * Makes the proxy implement the introduced interfaces. Their methods the target does not declare publicly delegate
+     * to one default implementation per proxy instance, created on first use; advised ones route through the runtime
+     * like target methods. The instances live in a `WeakMap` keyed by the proxy, which works for readonly classes too.
+     *
+     * @param \ReflectionClass<covariant object> $target
+     * @param array<class-string, class-string>  $introductions    interface => default implementation
+     * @param list<string>                       $advisedMethods
+     * @param string                             $targetExpression the advised instance as passed to the runtime
+     */
+    public function addIntroductions(ClassType $class, \ReflectionClass $target, array $introductions, array $advisedMethods, string $targetExpression): void
+    {
+        if ([] === $introductions) {
+            return;
+        }
+        $instances = [];
+        foreach ($introductions as $interface => $impl) {
+            $class->addImplement($interface);
+            $instances[] = sprintf('    \\%s::class => new \\%s(),', $interface, $impl);
+        }
+        $class->addMethod('__aopIntroduction')
+            ->setPrivate()
+            ->setReturnType('object')
+            ->setBody("static \$instances = null;\n\$instances ??= new \\WeakMap();\n\$instances[\$this] ??= [];\n\n"
+                ."return \$instances[\$this][\$interface] ??= match (\$interface) {\n".implode("\n", $instances)."\n};")
+            ->addParameter('interface')->setType('string');
+
+        foreach (MethodEligibility::introducedMethods($target, array_keys($introductions)) as $name => $method) {
+            $interface = $method->getDeclaringClass()->getName();
+            foreach (array_keys($introductions) as $introduced) {
+                if (is_a($introduced, $interface, true)) {
+                    $interface = $introduced;
+                    break;
+                }
+            }
+            $args = $this->forwardedArguments($method);
+            $signature = $this->signature($method)->setStatic($method->isStatic());
+            if ($method->isStatic()) {
+                $class->addMember($signature->setBody($this->returnStatement($method, sprintf('\\%s::%s(%s)', $introductions[$interface], $name, $args), false)));
+                continue;
+            }
+            $delegate = sprintf('$this->__aopIntroduction(\\%s::class)->%s', $interface, $name);
+            if (!in_array($name, $advisedMethods, true)) {
+                $class->addMember($signature->setBody($this->returnStatement($method, sprintf('%s(%s)', $delegate, $args), false)));
+                continue;
+            }
+            $invoke = sprintf(
+                'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s(...$args))',
+                $targetExpression,
+                $target->getName(),
+                var_export($name, true),
+                $this->argumentArray($method),
+                $delegate,
+            );
+            $class->addMember($signature->setBody(
+                "if (null === self::__aopRuntime()) {\n"
+                .'    '.str_replace("\n", "\n    ", $this->returnStatement($method, sprintf('%s(%s)', $delegate, $args), true))."\n"
+                ."}\n"
+                .$this->returnStatement($method, $invoke, false),
+            ));
+        }
+    }
+
+    /**
      * Copies the signature of `$method`: `self`/`parent` resolved to the declaring class FQCN / its parent,
      * method attributes dropped except `#[\ReturnTypeWillChange]` (an untyped implementation of an internal interface
      * method would otherwise emit a deprecation), only `#[\SensitiveParameter]` kept on parameters, constant defaults made absolute.

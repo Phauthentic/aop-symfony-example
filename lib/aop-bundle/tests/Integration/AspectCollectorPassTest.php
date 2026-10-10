@@ -9,10 +9,14 @@ use Phauthentic\AOP\Exception\AopException;
 use Phauthentic\AOP\Symfony\Compiler\AspectCollectorPass;
 use Phauthentic\AOP\Symfony\Container\AdvisorRegistryFactory;
 use Phauthentic\AOP\Symfony\Container\ContainerAspectInstanceResolver;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\InvalidAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
+use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -66,6 +70,15 @@ final class AspectCollectorPassTest extends TestCase
         $registry = AdvisorRegistryFactory::create([LogAspect::class, BeanAspect::class]);
 
         self::assertSame([BeanAspect::class.'::before', LogAspect::class.'::around'], array_map(static fn ($a) => $a->id, $registry->all()));
+    }
+
+    #[Test]
+    public function registryCarriesIntroductions(): void
+    {
+        $registry = AdvisorRegistryFactory::create([LogAspect::class, AuditAspect::class]);
+
+        self::assertSame([AuditAspect::class], array_map(static fn ($i) => $i->aspectClass, $registry->introductions()));
+        self::assertSame([Auditable::class], array_keys($registry->introductionsFor(Reflect::cls(AuditedService::class))));
     }
 
     #[Test]

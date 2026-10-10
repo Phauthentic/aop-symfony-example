@@ -9,6 +9,11 @@ use Phauthentic\AOP\Proxy\GeneratedProxy;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Proxy\SubclassProxyGenerator;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ReadonlyWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Targets\AttributedTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\CountingConstructor;
@@ -271,5 +276,70 @@ final class SubclassProxyGeneratorTest extends TestCase
             $proxy->scaleAll(10, $x, $y);
             self::assertSame([10, 20], [$x, $y]);
         }
+    }
+
+    /**
+     * @param class-string<WorkInterface> $class
+     * @param list<string>                $methods
+     *
+     * @return class-string<WorkInterface&Auditable&AdvisedInterface>
+     */
+    private function loadIntroducing(string $class, array $methods = []): string
+    {
+        $generated = (new SubclassProxyGenerator())->generate(new \ReflectionClass($class), $methods, $this->name(), [Auditable::class => AuditTrail::class]);
+        self::assertSame([Auditable::class => AuditTrail::class], $generated->introductions);
+        $proxyClass = ProxyClassWriter::load($generated);
+        if (!is_a($proxyClass, $class, true) || !is_a($proxyClass, Auditable::class, true) || !is_a($proxyClass, AdvisedInterface::class, true)) {
+            self::fail($proxyClass.' is not an advised, auditable subclass of '.$class);
+        }
+
+        return $proxyClass;
+    }
+
+    #[Test]
+    public function introducedInterfaceIsImplementedByDelegatingToOneDefaultImplementationPerInstance(): void
+    {
+        $class = $this->loadIntroducing(WorkTarget::class);
+        $created = AuditTrail::$created;
+
+        $first = new $class();
+        $second = new $class();
+        self::assertInstanceOf(WorkTarget::class, $first);
+        self::assertInstanceOf(Auditable::class, $first);
+        self::assertSame($created, AuditTrail::$created, 'the default implementation is created lazily');
+
+        $first->recordAudit('a');
+        $first->recordAudit('b');
+        $second->recordAudit('c');
+
+        self::assertSame(['a', 'b'], $first->auditTrail());
+        self::assertSame(['c'], $second->auditTrail());
+        self::assertSame($created + 2, AuditTrail::$created);
+        self::assertSame('worked x', $first->work('x'));
+    }
+
+    #[Test]
+    public function readonlyTargetsGetIntroductionsToo(): void
+    {
+        $class = $this->loadIntroducing(ReadonlyWorkTarget::class);
+        $proxy = new $class('p-');
+
+        self::assertTrue((new \ReflectionClass($class))->isReadOnly());
+        self::assertInstanceOf(Auditable::class, $proxy);
+        $proxy->recordAudit('a');
+        self::assertSame(['a'], $proxy->auditTrail());
+        self::assertSame('p-x', $proxy->work('x'));
+    }
+
+    #[Test]
+    public function advisedIntroducedMethodsRouteThroughTheRuntime(): void
+    {
+        $class = $this->loadIntroducing(WorkTarget::class, ['auditTrail', 'recordAudit']);
+        $proxy = new $class();
+        $proxy->__aopSetRuntime(ProxyTestHelper::emptyRuntime());
+
+        self::assertInstanceOf(Auditable::class, $proxy);
+        $proxy->recordAudit('a');
+        self::assertSame(['a'], $proxy->auditTrail());
     }
 }
