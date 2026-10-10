@@ -5,41 +5,78 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Pointcut;
 
 use Phauthentic\AOP\Pointcut\Expression\Ast\ParamListNode;
+use Phauthentic\AOP\Pointcut\Expression\Ast\TypePatternNode;
+use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
 
 /**
- * TODO C4: placeholder, replace with the real implementation.
+ * `@args(Attr, ..)`: every listed argument must be an object whose class carries the attribute.
+ * A binding binds the attribute instance; its type restriction names the attribute class.
  */
 final class AtArgsPointcut implements PointcutInterface
 {
+    use ArgumentList;
+
     /**
-     * @param list<string> $bindingNames names of the `BindingCandidateNode`s in $params that are advice parameters
+     * @param array<string, BindingSpec> $bindings binding name => spec of the `BindingCandidateNode`s in $params that are advice parameters
      */
-    public function __construct(public readonly ParamListNode $params, public readonly array $bindingNames)
+    public function __construct(public readonly ParamListNode $params, array $bindings = [])
     {
-    }
-
-    public function matchesClass(\ReflectionClass $class, StaticMatchContext $ctx): bool
-    {
-        return true; // TODO C4
-    }
-
-    public function matchesMethod(\ReflectionMethod $method, StaticMatchContext $ctx): bool
-    {
-        return true; // TODO C4
+        $this->initArguments($params, $bindings, BindingKind::AT_ARGS);
     }
 
     public function isRuntime(): bool
     {
-        return true; // TODO C4
+        return true; // attribute presence depends on the argument's class
+    }
+
+    public function matchesMethod(\ReflectionMethod $method, StaticMatchContext $ctx): bool
+    {
+        return $this->arityFeasible($method);
     }
 
     public function matchesRuntime(RuntimeMatchContext $ctx): bool
     {
-        return true; // TODO C4
+        $args = array_values($ctx->args);
+        if (!$this->runtimeArityMatches($args)) {
+            return false;
+        }
+
+        $found = [];
+        foreach ($this->entries as $i => $entry) {
+            if (null === $entry) {
+                continue;
+            }
+            $pattern = match (true) {
+                $entry instanceof TypePatternNode => new TypePattern($entry->pattern, false, $entry->includeSubtypes),
+                null !== $entry->typeRestriction => new TypePattern($entry->typeRestriction, false, true),
+                default => null,
+            };
+            $attribute = is_object($args[$i]) ? self::attribute($args[$i], $pattern) : null;
+            if (null === $attribute) {
+                return false;
+            }
+            if ($entry instanceof BindingSpec) {
+                $found[$entry->name] = $attribute->newInstance();
+            }
+        }
+        foreach ($found as $name => $value) {
+            $ctx->bind($name, $value);
+        }
+
+        return true;
     }
 
-    public function bindings(): array
+    /**
+     * @return \ReflectionAttribute<object>|null
+     */
+    private static function attribute(object $argument, ?TypePattern $pattern): ?\ReflectionAttribute
     {
-        return []; // TODO C4
+        foreach ((new \ReflectionObject($argument))->getAttributes() as $attribute) {
+            if (null === $pattern || $pattern->matchesName($attribute->getName())) {
+                return $attribute;
+            }
+        }
+
+        return null;
     }
 }

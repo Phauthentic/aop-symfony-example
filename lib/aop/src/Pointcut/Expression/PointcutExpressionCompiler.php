@@ -156,11 +156,11 @@ final class PointcutExpressionCompiler
     private function args(ParamListNode $list, array $names, bool $atArgs): PointcutInterface
     {
         $params = [];
-        $bindingNames = [];
+        $bindings = [];
         foreach ($list->params as $param) {
             if ($param instanceof BindingCandidateNode) {
                 if (array_key_exists($param->name, $names)) {
-                    $bindingNames[] = $param->name;
+                    $bindings[$param->name] = new BindingSpec($param->name, $atArgs ? BindingKind::AT_ARGS : BindingKind::ARGS, $names[$param->name]);
                 } else {
                     $param = new TypePatternNode($param->name);
                 }
@@ -169,6 +169,6 @@ final class PointcutExpressionCompiler
         }
         $list = new ParamListNode($params, $list->trailingEllipsis);
 
-        return $atArgs ? new AtArgsPointcut($list, $bindingNames) : new ArgsPointcut($list, $bindingNames);
+        return $atArgs ? new AtArgsPointcut($list, $bindings) : new ArgsPointcut($list, $bindings);
     }
 }

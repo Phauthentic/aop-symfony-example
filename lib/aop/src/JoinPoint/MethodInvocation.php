@@ -15,6 +15,11 @@ final class MethodInvocation implements ProceedingJoinPointInterface
     private int $index = 0;
 
     /**
+     * @var array<string, mixed>
+     */
+    private array $boundArguments = [];
+
+    /**
      * @param array<int|string, mixed>                  $args
      * @param list<MethodInterceptorInterface>          $interceptors
      * @param \Closure(array<int|string, mixed>): mixed $targetInvoker
@@ -52,6 +57,25 @@ final class MethodInvocation implements ProceedingJoinPointInterface
     public function toShortString(): string
     {
         return $this->signature->toShortString();
+    }
+
+    /**
+     * @param array<string, mixed> $bound values bound by the pointcut, for the next interceptor
+     */
+    public function withBoundArguments(array $bound): self
+    {
+        $copy = clone $this;
+        $copy->boundArguments = $bound;
+
+        return $copy;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getBoundArguments(): array
+    {
+        return $this->boundArguments;
     }
 
     public function proceed(?array $args = null): mixed
