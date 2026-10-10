@@ -1,0 +1,9 @@
+---
+description: Coding Standards
+globs:
+alwaysApply: true
+---
+
+- Apply clean code by Robert C. Martin
+- Apply the SOLID principles
+- Apply the PSR-12 standard
