@@ -48,7 +48,7 @@ flowchart LR
 |---|---|---|
 | `Attribute` | `Aspect`, `Order`, `Pointcut`, `Before`, `After`, `Around`, `AfterReturning`, `AfterThrowing`, `DeclareParents`, `Proxyable` | The user-facing attributes. Data only. |
 | `Advice` | `AdviceType` (enum with `precedence()` and `attributeClass()`), `AdviceDefinition` | One advice method as data: aspect class, method, type, expression, `returning`/`throwing`, declaration index. |
-| `Aspect` | `AspectMetadataReader`, `AspectMetadata`, `IntroductionDefinition`, `AspectInstanceResolverInterface`, `ArrayAspectInstanceResolver` | Reflection of an aspect class into metadata (advice, named pointcuts, introductions); supply of aspect instances at runtime. |
+| `Aspect` | `AspectMetadataReader`, `AspectMetadata`, `IntroductionDefinition`, `AspectScope`, `AspectInstanceResolverInterface`, `ArrayAspectInstanceResolver` | Reflection of an aspect class into metadata (advice, named pointcuts, introductions); supply of aspect instances at runtime. |
 | `Pointcut\Expression` | `Lexer`, `Token`, `TokenType`, `Parser`, `Ast\*`, `PointcutExpressionCompiler`, `NamedPointcutResolverInterface` | Text to AST to `PointcutInterface` tree. The compiler also turns bare identifiers into `BindingSpec`s. |
 | `Pointcut\Pattern` | `TypePattern`, `NamePattern`, `ParameterPattern`, `ModifierPattern`, `ArgumentMatcher` | Reusable matchers for names, types, parameter lists and runtime argument values. |
 | `Pointcut` | `PointcutInterface`, one class per designator, `AndPointcut`, `OrPointcut`, `NotPointcut`, `TruePointcut`, `StaticMatchContext`, `RuntimeMatchContext`, `RuntimeEvaluation`, `BindingSpec`, `BindingKind`, traits `SubjectBinding` and `ArgumentList` | The matching logic, split into static and runtime halves. |

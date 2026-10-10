@@ -14,18 +14,35 @@ final class ArrayAspectInstanceResolver implements AspectInstanceResolverInterfa
     private array $instances = [];
 
     /**
-     * @param array<class-string, object|\Closure(): object> $aspects
+     * @param array<class-string, object|\Closure(): object> $aspects a plain object is shared by every scope object, so use closures for pertarget/perthis aspects
      */
     public function __construct(private array $aspects)
     {
     }
 
-    public function get(string $aspectClass): object
+    /**
+     * @var array<class-string, \WeakMap<object, object>> instances live exactly as long as their scope object
+     */
+    private array $scoped = [];
+
+    public function get(string $aspectClass, ?object $scope = null): object
     {
-        if (isset($this->instances[$aspectClass])) {
-            return $this->instances[$aspectClass];
+        if (null === $scope) {
+            return $this->instances[$aspectClass] ??= $this->create($aspectClass);
         }
 
+        /** @var \WeakMap<object, object> $map */
+        $map = $this->scoped[$aspectClass] ?? new \WeakMap();
+        $this->scoped[$aspectClass] = $map;
+
+        return $map[$scope] ??= $this->create($aspectClass);
+    }
+
+    /**
+     * @param class-string $aspectClass
+     */
+    private function create(string $aspectClass): object
+    {
         if (!array_key_exists($aspectClass, $this->aspects)) {
             throw new AspectDefinitionException(sprintf('No instance registered for aspect "%s".', $aspectClass));
         }
@@ -36,8 +53,6 @@ final class ArrayAspectInstanceResolver implements AspectInstanceResolverInterfa
         if (!$instance instanceof $aspectClass) {
             throw new AspectDefinitionException(sprintf('Instance for aspect "%s" is of type "%s".', $aspectClass, get_debug_type($instance)));
         }
-
-        $this->instances[$aspectClass] = $instance;
 
         return $instance;
     }

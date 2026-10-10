@@ -229,10 +229,18 @@ A skipped entry looks like:
 | Id | Class | Purpose |
 |---|---|---|
 | `phauthentic_aop.advisor_registry` | `AdvisorRegistry` via `AdvisorRegistryFactory::create()` | All advisors, sorted. |
-| `phauthentic_aop.aspect_resolver` | `ContainerAspectInstanceResolver` | Resolves aspect instances from a service locator. |
+| `phauthentic_aop.aspect_resolver` | `ContainerAspectInstanceResolver` | Resolves aspect instances from a service locator, one per target or proxy for `pertarget`/`perthis` aspects. |
 | `phauthentic_aop.parameter_binder` | `ParameterBinder` | Plans advice parameter binding. |
 | `phauthentic_aop.chain_factory` | `AdvisorChainFactory` | Builds interceptor chains. |
 | `phauthentic_aop.runtime` | `AopRuntime` | Called by proxies; holds bean name registrations. |
 | `phauthentic_aop.command.debug` | `DebugAopCommand` | `debug:aop`. |
 
 All are private.
+
+## Aspect scopes
+
+An aspect with `#[Aspect(scope: AspectScope::PER_TARGET)]` or `PER_THIS` is registered with `shared: false` automatically.
+You do not set it yourself.
+`ContainerAspectInstanceResolver` asks the locator once per target or proxy object and keeps the result in a `WeakMap`.
+`debug:aop` prints the scope after the aspect class, for example `App\Aspect\CallCounter (pertarget)::count`.
+Singleton aspects are shown without a suffix.

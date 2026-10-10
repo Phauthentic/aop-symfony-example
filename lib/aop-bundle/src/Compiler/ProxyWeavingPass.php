@@ -8,6 +8,7 @@ use Phauthentic\AOP\Advisor\Advisor;
 use Phauthentic\AOP\Advisor\AdvisorChainFactory;
 use Phauthentic\AOP\Advisor\IntroductionAdvisor;
 use Phauthentic\AOP\Aspect\ArrayAspectInstanceResolver;
+use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Attribute\Aspect;
 use Phauthentic\AOP\Binding\ParameterBinder;
 use Phauthentic\AOP\Exception\ProxyGenerationException;
@@ -219,7 +220,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
             $advisors = $chains->matchedAdvisors($target, $method, $context);
             if ([] !== $advisors) {
-                $methods[$method->getName()] = array_map(static fn (Advisor $a): string => $a->id, $advisors);
+                $methods[$method->getName()] = array_map(static fn (Advisor $a): string => AspectScope::SINGLETON === $a->advice->scope ? $a->id : sprintf('%s (%s)::%s', $a->advice->aspectClass, $a->advice->scope->value, $a->advice->methodName), $advisors);
             }
         }
 

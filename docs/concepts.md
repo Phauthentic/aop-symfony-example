@@ -46,7 +46,7 @@ The service classes stay unaware of it.
 | CGLIB proxy | Subclass proxy | For non-final classes. Self-invocation is advised. |
 | `AopContext.currentProxy()` | `AopContext::currentProxy()` | Always available, no `exposeProxy` switch. Use it for self-invocation in interface-proxied targets. See [Proxies](proxies.md#self-invocation-and-aopcontext). |
 | `@DeclareParents`, introductions | `#[DeclareParents(typePattern, interface, defaultImpl)]` on the aspect class | The interface is an argument instead of a field type. See [Introductions](introductions.md). |
-| `perthis`, `pertarget` | Not supported | Aspects are singletons. |
+| `perthis`, `pertarget` | `#[Aspect(scope: AspectScope::PER_THIS)]`, `#[Aspect(scope: AspectScope::PER_TARGET)]` | Aspects are singletons by default. See [Advice](advice.md#aspect-instances). |
 | `call`, `cflow`, `get`, `set`, `withincode`, `if` | Not supported | Raise `UnsupportedPointcutDesignatorException`. |
 
 ## Flow 1: a call through a proxy at runtime

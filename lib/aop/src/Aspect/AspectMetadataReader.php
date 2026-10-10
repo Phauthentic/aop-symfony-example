@@ -31,6 +31,7 @@ final class AspectMetadataReader
             throw new AspectDefinitionException(sprintf('Class "%s" is not an aspect: missing #[Aspect] attribute.', $name));
         }
 
+        $scope = $rc->getAttributes(Aspect::class)[0]->newInstance()->scope;
         $order = ($rc->getAttributes(Order::class)[0] ?? null)?->newInstance()->value ?? PHP_INT_MAX;
         $pointcuts = [];
         $advices = [];
@@ -83,10 +84,11 @@ final class AspectMetadataReader
                 $instance instanceof AfterReturning ? $instance->returning : null,
                 $instance instanceof AfterThrowing ? $instance->throwing : null,
                 count($advices),
+                $scope,
             );
         }
 
-        return new AspectMetadata($name, $order, $pointcuts, $advices, self::introductions($rc));
+        return new AspectMetadata($name, $order, $pointcuts, $advices, self::introductions($rc), $scope);
     }
 
     /**

@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Symfony\Tests\Integration;
 
 use Phauthentic\AOP\Advisor\AdvisorRegistry;
+use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Exception\AopException;
 use Phauthentic\AOP\Symfony\Compiler\AspectCollectorPass;
 use Phauthentic\AOP\Symfony\Container\AdvisorRegistryFactory;
 use Phauthentic\AOP\Symfony\Container\ContainerAspectInstanceResolver;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\CounterAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\InvalidAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
@@ -79,6 +81,42 @@ final class AspectCollectorPassTest extends TestCase
 
         self::assertSame([AuditAspect::class], array_map(static fn ($i) => $i->aspectClass, $registry->introductions()));
         self::assertSame([Auditable::class], array_keys($registry->introductionsFor(Reflect::cls(AuditedService::class))));
+    }
+
+    #[Test]
+    public function nonSingletonAspectsAreMadeNonShared(): void
+    {
+        $container = $this->containerWithAspects(LogAspect::class, CounterAspect::class);
+        BundleContainer::compile($container);
+
+        self::assertTrue($container->getDefinition(LogAspect::class)->isShared());
+        self::assertFalse($container->getDefinition(CounterAspect::class)->isShared());
+    }
+
+    #[Test]
+    public function resolverCreatesOneScopedInstancePerScopeObject(): void
+    {
+        $container = $this->containerWithAspects(CounterAspect::class);
+        $container->setAlias('test.aspect_resolver', 'phauthentic_aop.aspect_resolver')->setPublic(true);
+        $container->compile();
+        $resolver = $container->get('test.aspect_resolver');
+        self::assertInstanceOf(ContainerAspectInstanceResolver::class, $resolver);
+        $a = new \stdClass();
+        $b = new \stdClass();
+
+        self::assertSame($resolver->get(CounterAspect::class, $a), $resolver->get(CounterAspect::class, $a));
+        self::assertNotSame($resolver->get(CounterAspect::class, $a), $resolver->get(CounterAspect::class, $b));
+    }
+
+    #[Test]
+    public function registryRowsCarryTheScope(): void
+    {
+        $registry = AdvisorRegistryFactory::create([CounterAspect::class, LogAspect::class]);
+
+        self::assertSame(
+            [AspectScope::PER_TARGET, AspectScope::SINGLETON],
+            array_map(static fn ($a) => $a->advice->scope, $registry->all()),
+        );
     }
 
     #[Test]

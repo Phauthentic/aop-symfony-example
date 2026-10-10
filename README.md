@@ -66,7 +66,7 @@ bin/console app:aop-demo   # runs the demo scenarios
 | JDK dynamic proxy | interface proxy |
 | CGLIB proxy | subclass proxy |
 | Introduction, `@DeclareParents` | `#[DeclareParents(typePattern, interface, defaultImpl)]` on the aspect class |
-| `perthis`, `pertarget` | not supported |
+| `perthis`, `pertarget` | `#[Aspect(scope: AspectScope::PER_THIS)]`, `#[Aspect(scope: AspectScope::PER_TARGET)]` |
 
 ## Proxy strategies
 
@@ -83,7 +83,6 @@ Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop
 ## Limitations
 
 - Only method execution is a join point.
-- No `perthis`/`pertarget`.
 - Interface proxies skip self-invocation; use `AopContext::currentProxy()`, `debug:aop` lists the affected calls.
 - Methods returning by reference are not advised; methods with by-reference parameters are.
 - Private, static, final (subclass strategy) and magic methods are not advised.

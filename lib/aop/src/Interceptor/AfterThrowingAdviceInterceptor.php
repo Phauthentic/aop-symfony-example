@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Interceptor;
 
 use Phauthentic\AOP\Aspect\AspectInstanceResolverInterface;
+use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Binding\BindingPlan;
 use Phauthentic\AOP\JoinPoint\MethodInvocation;
 
@@ -15,9 +16,9 @@ final class AfterThrowingAdviceInterceptor implements MethodInterceptorInterface
     /**
      * @param class-string $aspectClass
      */
-    public function __construct(AspectInstanceResolverInterface $aspects, string $aspectClass, string $method, BindingPlan $plan)
+    public function __construct(AspectInstanceResolverInterface $aspects, string $aspectClass, string $method, BindingPlan $plan, AspectScope $scope = AspectScope::SINGLETON)
     {
-        $this->advice = new AdviceInvoker($aspects, $aspectClass, $method, $plan);
+        $this->advice = new AdviceInvoker($aspects, $aspectClass, $method, $plan, $scope);
     }
 
     public function invoke(MethodInvocation $invocation): mixed

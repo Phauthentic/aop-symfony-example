@@ -11,6 +11,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Log;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CountedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
@@ -74,6 +75,26 @@ final class KernelBootTest extends TestCase
         $name = ' y ';
         $service->normalize($name);
         self::assertSame('y', $name, 'by-reference parameters write through the proxy');
+    }
+
+    #[Test]
+    public function pertargetAspectGetsOneInstancePerAdvisedService(): void
+    {
+        $a = self::container()->get('fixture.counted_a');
+        $b = self::container()->get('fixture.counted_b');
+        self::assertInstanceOf(CountedService::class, $a);
+        self::assertInstanceOf(CountedService::class, $b);
+
+        $a->work();
+        $a->work();
+        $b->work();
+
+        $counts = array_values(array_filter(Log::$entries, static fn (string $e): bool => str_starts_with($e, 'counter#')));
+        self::assertCount(3, $counts);
+        [$a1, $a2, $b1] = array_map(static fn (string $e): array => explode(':', $e), $counts);
+        self::assertSame($a1[0], $a2[0]);
+        self::assertNotSame($a1[0], $b1[0]);
+        self::assertSame(['1', '2', '1'], [$a1[1], $a2[1], $b1[1]]);
     }
 
     #[Test]

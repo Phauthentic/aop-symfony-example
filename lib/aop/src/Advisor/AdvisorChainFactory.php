@@ -74,7 +74,7 @@ final class AdvisorChainFactory
     {
         $advice = $advisor->advice;
         $plan = $this->plans[$advisor->id] ??= $this->binder->plan(new \ReflectionMethod($advice->aspectClass, $advice->methodName), $advice, $advisor->pointcut);
-        $args = [$this->aspects, $advice->aspectClass, $advice->methodName, $plan];
+        $args = [$this->aspects, $advice->aspectClass, $advice->methodName, $plan, $advice->scope];
 
         return match ($advice->type) {
             AdviceType::BEFORE => new BeforeAdviceInterceptor(...$args),

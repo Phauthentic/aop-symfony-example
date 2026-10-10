@@ -6,6 +6,7 @@ namespace Phauthentic\AOP\Symfony\Tests\Integration;
 
 use Phauthentic\AOP\Symfony\Command\DebugAopCommand;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\CounterAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
@@ -41,6 +42,8 @@ final class DebugAopCommandTest extends TestCase
         self::assertStringContainsString('greet', $output);
         self::assertStringContainsString(BeanAspect::class.'::before', $output);
         self::assertStringContainsString(LogAspect::class.'::around', $output);
+        self::assertStringContainsString(CounterAspect::class.' (pertarget)::count', $output);
+        self::assertStringNotContainsString(LogAspect::class.' (singleton)', $output);
         self::assertMatchesRegularExpression('/'.preg_quote(FinalService::class, '/').'\s+interface/', $output);
         self::assertStringContainsString(FinalNoInterfaceService::class, $output);
         self::assertStringContainsString('final and implements no interface', $output);

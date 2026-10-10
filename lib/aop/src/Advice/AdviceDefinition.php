@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Advice;
 
+use Phauthentic\AOP\Aspect\AspectScope;
+
 final readonly class AdviceDefinition
 {
     /**
@@ -17,6 +19,7 @@ final readonly class AdviceDefinition
         public ?string $returning,
         public ?string $throwing,
         public int $declarationIndex,
+        public AspectScope $scope = AspectScope::SINGLETON,
     ) {
     }
 }

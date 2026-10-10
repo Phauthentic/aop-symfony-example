@@ -20,6 +20,7 @@ final readonly class AspectMetadata
         public array $namedPointcuts,
         public array $advices,
         public array $introductions = [],
+        public AspectScope $scope = AspectScope::SINGLETON,
     ) {
     }
 }

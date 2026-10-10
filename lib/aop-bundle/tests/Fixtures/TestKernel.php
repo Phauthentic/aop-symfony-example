@@ -7,10 +7,12 @@ namespace Phauthentic\AOP\Symfony\Tests\Fixtures;
 use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\CounterAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CountedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
@@ -90,5 +92,8 @@ final class TestKernel extends Kernel
         $services->set(BeanAspect::class);
         $services->set('fixture.audited', AuditedService::class)->public();
         $services->set(AuditAspect::class);
+        $services->set('fixture.counted_a', CountedService::class)->public();
+        $services->set('fixture.counted_b', CountedService::class)->public();
+        $services->set(CounterAspect::class);
     }
 }

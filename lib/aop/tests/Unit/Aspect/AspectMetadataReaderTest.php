@@ -6,6 +6,7 @@ namespace Phauthentic\AOP\Tests\Unit\Aspect;
 
 use Phauthentic\AOP\Advice\AdviceType;
 use Phauthentic\AOP\Aspect\AspectMetadataReader;
+use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Aspect\IntroductionDefinition;
 use Phauthentic\AOP\Exception\AspectDefinitionException;
 use Phauthentic\AOP\Tests\Fixtures\Aspect as F;
@@ -61,6 +62,17 @@ final class AspectMetadataReaderTest extends TestCase
             $m->introductions,
         );
         self::assertSame([], (new AspectMetadataReader())->read(F\OrderedAspect::class)->introductions);
+    }
+
+    public function testReadsScope(): void
+    {
+        $reader = new AspectMetadataReader();
+
+        self::assertSame(AspectScope::SINGLETON, $reader->read(F\OrderedAspect::class)->scope);
+        $perTarget = $reader->read(F\PerTargetCounterAspect::class);
+        self::assertSame(AspectScope::PER_TARGET, $perTarget->scope);
+        self::assertSame(AspectScope::PER_TARGET, $perTarget->advices[0]->scope);
+        self::assertSame(AspectScope::PER_THIS, $reader->read(F\PerThisCounterAspect::class)->scope);
     }
 
     public function testInvalidIntroductionNamesTheAspect(): void
