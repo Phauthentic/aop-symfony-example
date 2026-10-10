@@ -170,6 +170,17 @@ final class ProxyFactoryTest extends TestCase
     }
 
     #[Test]
+    public function eachBeanNameGetsItsOwnProxyClass(): void
+    {
+        $factory = $this->factory();
+
+        self::assertNotSame(
+            $factory->createProxyClass(CountingConstructor::class, 'app.first'),
+            $factory->createProxyClass(CountingConstructor::class, 'app.second'),
+        );
+    }
+
+    #[Test]
     public function acceptsARegistryDirectly(): void
     {
         $factory = new ProxyFactory(new AdvisorRegistry([]), new ArrayAspectInstanceResolver([]));

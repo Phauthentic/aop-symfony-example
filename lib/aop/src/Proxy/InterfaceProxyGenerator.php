@@ -16,10 +16,10 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     {
     }
 
-    public function generate(\ReflectionClass $target, array $advisedMethods): GeneratedProxy
+    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = ''): GeneratedProxy
     {
         sort($advisedMethods);
-        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods);
+        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods, $salt);
         [$file, $class] = $this->builder->createClass($className, $target);
 
         $interfaces = self::minimalInterfaces($target);

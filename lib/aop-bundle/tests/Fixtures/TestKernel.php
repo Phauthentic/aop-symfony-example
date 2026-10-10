@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Phauthentic\AOP\Symfony\Tests\Fixtures;
+
+use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
+use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
+use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\HttpKernel\Kernel;
+
+final class TestKernel extends Kernel
+{
+    use MicroKernelTrait;
+
+    public const SCRATCH_DIR = '/tmp/claude-1000/-home-florian-projects-symfony-aop/b141f6da-9d6f-43c9-a85c-7dec6c378374/scratchpad/aop-bundle-tests';
+
+    public function __construct(private readonly string $baseDir)
+    {
+        parent::__construct('test', true);
+    }
+
+    public static function newBaseDir(): string
+    {
+        return self::SCRATCH_DIR.'/'.bin2hex(random_bytes(6));
+    }
+
+    public function registerBundles(): iterable
+    {
+        yield new FrameworkBundle();
+        yield new PhauthenticAopBundle();
+    }
+
+    public function getProjectDir(): string
+    {
+        return __DIR__;
+    }
+
+    public function getCacheDir(): string
+    {
+        return $this->baseDir.'/cache';
+    }
+
+    public function getLogDir(): string
+    {
+        return $this->baseDir.'/log';
+    }
+
+    private function configureContainer(ContainerConfigurator $container): void
+    {
+        $container->extension('framework', ['secret' => 'test', 'test' => true]);
+        $container->extension('phauthentic_aop', [
+            'include' => ['Phauthentic\AOP\Symfony\Tests\Fixtures\**'],
+            'exclude' => ['Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\**'],
+        ]);
+
+        $services = $container->services()->defaults()->autowire()->autoconfigure();
+        $services->set('fixture.service', PlainService::class)->public();
+        $services->set('fixture.other', PlainService::class)->public();
+        // Hot path services get no inline include in the dumped container, so their proxy class must be autoloaded.
+        $services->set('fixture.hot', PlainService::class)->public()->tag('container.hot_path');
+        $services->set(FinalService::class)->public();
+        $services->alias(ShoutInterface::class, FinalService::class)->public();
+        $services->set(LazyService::class)->lazy()->public();
+        $services->set(CallsService::class)->call('setPrefix', ['pre-'])->public();
+        $services->set(FactoryCreatedService::class)->factory([FactoryCreatedService::class, 'create'])->public();
+        $services->set(FinalNoInterfaceService::class)->public();
+        $services->set(ExcludedService::class)->public();
+        $services->set(LogAspect::class);
+        $services->set(BeanAspect::class);
+    }
+}

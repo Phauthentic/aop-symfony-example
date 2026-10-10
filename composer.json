@@ -35,7 +35,8 @@
     "autoload-dev": {
         "psr-4": {
             "App\\Tests\\": "tests/",
-            "Phauthentic\\AOP\\Tests\\": "lib/aop/tests/"
+            "Phauthentic\\AOP\\Tests\\": "lib/aop/tests/",
+            "Phauthentic\\AOP\\Symfony\\Tests\\": "lib/aop-bundle/tests/"
         }
     },
     "replace": {

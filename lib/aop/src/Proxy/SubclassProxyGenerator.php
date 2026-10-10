@@ -14,10 +14,10 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
     {
     }
 
-    public function generate(\ReflectionClass $target, array $advisedMethods): GeneratedProxy
+    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = ''): GeneratedProxy
     {
         sort($advisedMethods);
-        $className = ProxyClassName::for($target->getName(), ProxyStrategy::SUBCLASS, $advisedMethods);
+        $className = ProxyClassName::for($target->getName(), ProxyStrategy::SUBCLASS, $advisedMethods, $salt);
         [$file, $class] = $this->builder->createClass($className, $target);
         $class->setExtends($target->getName());
         $class->addMethod('__aopGetTarget')->setPublic()->setReturnType('object')->setBody('return $this;');

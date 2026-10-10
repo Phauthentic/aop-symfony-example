@@ -104,10 +104,10 @@ final class ProxyFactory
         }
 
         $generator = ProxyStrategy::SUBCLASS === $strategy ? new SubclassProxyGenerator() : new InterfaceProxyGenerator();
-        $proxy = $generator->generate($target, $methods);
+        $proxy = $generator->generate($target, $methods, $beanName ?? '');
         $proxyClass = ProxyClassWriter::load($proxy, $this->cacheDir);
         if (null !== $beanName) {
-            $this->runtime()->registerBeanName($class, $beanName);
+            $this->runtime()->registerBeanName($proxyClass, $beanName);
         }
 
         return $this->classes[$key] = $proxyClass;

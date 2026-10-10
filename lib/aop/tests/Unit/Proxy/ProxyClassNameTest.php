@@ -40,6 +40,8 @@ final class ProxyClassNameTest extends TestCase
 
         self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::INTERFACE, ['a']));
         self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a', 'b']));
+        self::assertNotSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], 'my.bean'));
+        self::assertSame($base, ProxyClassName::for('App\X', ProxyStrategy::SUBCLASS, ['a'], ''));
         self::assertMatchesRegularExpression('/^Phauthentic\\\\AOP\\\\Generated\\\\App\\\\XProxy_[0-9a-f]{12}$/', $base);
     }
 }

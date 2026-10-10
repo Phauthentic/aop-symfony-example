@@ -189,4 +189,29 @@ final class AopRuntimeTest extends TestCase
         $this->call($rt, $g);
         self::assertCount(1, $probe->calls);
     }
+
+    #[Test]
+    public function beanNameRegisteredForAProxyClassAppliesToThatClassOnly(): void
+    {
+        $def = new AdviceDefinition(ProbeAspect::class, 'plain', AdviceType::BEFORE, 'bean(my.greeter)', null, null, 0);
+        $probe = new ProbeAspect();
+        $rt = new AopRuntime(new AdvisorChainFactory(
+            new AdvisorRegistry([new Advisor('p', $def, 1, (new PointcutExpressionCompiler())->compile('bean(my.greeter)'))]),
+            new ArrayAspectInstanceResolver([ProbeAspect::class => $probe]),
+            new ParameterBinder(),
+        ));
+        $g = new Greeter();
+        // Two interface-style proxies of the same target class.
+        $named = new class {
+        };
+        $other = new class {
+        };
+        $rt->registerBeanName($named::class, 'my.greeter');
+        $invoke = static fn (object $proxy): mixed => $rt->invoke($proxy, $g, Greeter::class, 'greet', ['x'], static fn (array $a): mixed => $g->greet('x'));
+
+        $invoke($other);
+        self::assertCount(0, $probe->calls);
+        $invoke($named);
+        self::assertCount(1, $probe->calls);
+    }
 }
