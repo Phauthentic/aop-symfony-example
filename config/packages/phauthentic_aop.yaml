@@ -1,0 +1,2 @@
+phauthentic_aop:
+    include: ['App\**']
