@@ -92,8 +92,10 @@ interface AdvisedInterface
 }
 ```
 
-Until `__aopSetRuntime()` has been called the proxy behaves exactly like the target: every advised method checks `isset($this->__aopRuntime)` and calls through directly if it is unset.
-Calls made from inside the constructor are therefore never advised.
+The runtime is stored once per proxy class, not per instance.
+Once any instance of a proxy class has received the runtime, all instances are advised, including those created with `new static` inside the target.
+Until then the proxy behaves exactly like the target: every advised method checks `self::__aopRuntime()` and calls through directly if it returns `null`.
+The runtime lives in a `static` local variable of a private static method because PHP forbids static properties on readonly classes.
 
 ### Subclass proxy
 
@@ -108,11 +110,16 @@ namespace Phauthentic\AOP\Generated\App\Service;
 
 class StringServiceProxy_aad667b31091 extends \App\Service\StringService implements \Phauthentic\AOP\Proxy\AdvisedInterface
 {
-    private \Phauthentic\AOP\Runtime\AopRuntime $__aopRuntime;
+    private static function __aopRuntime(?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null): ?\Phauthentic\AOP\Runtime\AopRuntime
+    {
+        static $current = null;
+
+        return $current = $runtime ?? $current;
+    }
 
     public function __aopSetRuntime(\Phauthentic\AOP\Runtime\AopRuntime $runtime): void
     {
-        $this->__aopRuntime = $runtime;
+        self::__aopRuntime($runtime);
     }
 
     public function __aopGetTarget(): object
@@ -122,18 +129,18 @@ class StringServiceProxy_aad667b31091 extends \App\Service\StringService impleme
 
     public function flaky(string $input): string
     {
-        if (!isset($this->__aopRuntime)) {
+        if (null === self::__aopRuntime()) {
             return parent::flaky($input);
         }
-        return $this->__aopRuntime->invoke($this, $this, \App\Service\StringService::class, 'flaky', [$input], fn (array $args): mixed => parent::flaky(...$args));
+        return self::__aopRuntime()->invoke($this, $this, \App\Service\StringService::class, 'flaky', [$input], fn (array $args): mixed => parent::flaky(...$args));
     }
 
     public function greet(string $name, int $times = 1): string
     {
-        if (!isset($this->__aopRuntime)) {
+        if (null === self::__aopRuntime()) {
             return parent::greet($name, $times);
         }
-        return $this->__aopRuntime->invoke($this, $this, \App\Service\StringService::class, 'greet', [$name, $times], fn (array $args): mixed => parent::greet(...$args));
+        return self::__aopRuntime()->invoke($this, $this, \App\Service\StringService::class, 'greet', [$name, $times], fn (array $args): mixed => parent::greet(...$args));
     }
 }
 ```
@@ -158,11 +165,16 @@ namespace Phauthentic\AOP\Generated\App\Service;
 
 class OrderServiceProxy_90e0b43165d3 implements \Phauthentic\AOP\Proxy\AdvisedInterface, \App\Service\OrderServiceInterface
 {
-    private \Phauthentic\AOP\Runtime\AopRuntime $__aopRuntime;
+    private static function __aopRuntime(?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null): ?\Phauthentic\AOP\Runtime\AopRuntime
+    {
+        static $current = null;
+
+        return $current = $runtime ?? $current;
+    }
 
     public function __aopSetRuntime(\Phauthentic\AOP\Runtime\AopRuntime $runtime): void
     {
-        $this->__aopRuntime = $runtime;
+        self::__aopRuntime($runtime);
     }
 
     public function __construct(
@@ -183,20 +195,16 @@ class OrderServiceProxy_90e0b43165d3 implements \Phauthentic\AOP\Proxy\AdvisedIn
         if (!$result instanceof \App\Service\OrderService) {
             return $result;
         }
-        $proxy = new static($result);
-        if (isset($this->__aopRuntime)) {
-            $proxy->__aopSetRuntime($this->__aopRuntime);
-        }
 
-        return $proxy;
+        return new static($result);
     }
 
     public function placeOrder(string $sku, int $qty): string
     {
-        if (!isset($this->__aopRuntime)) {
+        if (null === self::__aopRuntime()) {
             return $this->__aopTarget->placeOrder($sku, $qty);
         }
-        return $this->__aopRuntime->invoke($this, $this->__aopTarget, \App\Service\OrderService::class, 'placeOrder', [$sku, $qty], fn (array $args): mixed => $this->__aopTarget->placeOrder(...$args));
+        return self::__aopRuntime()->invoke($this, $this->__aopTarget, \App\Service\OrderService::class, 'placeOrder', [$sku, $qty], fn (array $args): mixed => $this->__aopTarget->placeOrder(...$args));
     }
 }
 ```
@@ -225,12 +233,12 @@ Points to notice:
 - Self-invocation with interface proxies is not advised.
   Inside the target `$this` is the plain object, so `$this->other()` bypasses the proxy.
   Use the subclass strategy (make the class non-final) if you need it.
-- `new static` inside a subclass-proxied target creates another proxy instance, but without a runtime, so it is not advised.
-  `new self` creates a plain target.
+- `new self` inside a subclass-proxied target creates a plain, unadvised target.
+  `new static` creates another proxy instance, which is advised.
 - By-reference parameters and return values disable advice for that method.
 - Private, static, final (subclass strategy) and magic methods are never advised.
 - A proxy cannot be unserialised in a process that has not loaded its class.
   With the bundle the proxy autoloader is registered at boot, so `unserialize()` works after the kernel booted; without it, call `ProxyClassWriter::load()` or include the file first.
 - When an interface declares a return type naming a parent class of the target, the interface proxy repeats that type and returns the raw target result instead of a proxy, because the proxy is not an instance of that parent.
 - `#[Around]` advice returning a value incompatible with the target's declared return type throws an `AdviceReturnException`.
-- Constructor calls are never advised, and neither are calls made before `__aopSetRuntime()`.
+- Constructor calls are never advised, and neither are calls made before any instance of the proxy class has received the runtime.

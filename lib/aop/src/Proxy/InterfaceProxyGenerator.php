@@ -39,12 +39,8 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             if (!$result instanceof \%2$s) {
                 return $result;
             }
-            $proxy = new static($result);
-            if (isset($this->__aopRuntime)) {
-                $proxy->__aopSetRuntime($this->__aopRuntime);
-            }
 
-            return $proxy;
+            return new static($result);
             PHP, self::TARGET, $target->getName()))
             ->addParameter('result')->setType('mixed');
 
@@ -62,7 +58,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                 $body = $this->builder->returnStatement($method, sprintf('%s->%s(%s)', self::TARGET, $name, $args), false, $wrap);
             } else {
                 $invoke = sprintf(
-                    '$this->__aopRuntime->invoke($this, %s, \\%s::class, %s, [%s], fn (array $args): mixed => %s->%s(...$args))',
+                    'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, [%s], fn (array $args): mixed => %s->%s(...$args))',
                     self::TARGET,
                     $target->getName(),
                     var_export($name, true),
@@ -71,7 +67,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                     $name,
                 );
                 $direct = sprintf('%s->%s(%s)', self::TARGET, $name, $args);
-                $body = "if (!isset(\$this->__aopRuntime)) {\n"
+                $body = "if (null === self::__aopRuntime()) {\n"
                     .'    '.str_replace("\n", "\n    ", $this->builder->returnStatement($method, $direct, true, $wrap))."\n"
                     ."}\n"
                     .$this->builder->returnStatement($method, $invoke, false, $wrap);

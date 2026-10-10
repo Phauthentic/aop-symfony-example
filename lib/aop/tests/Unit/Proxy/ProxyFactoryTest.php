@@ -24,6 +24,7 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\InterfaceTypedTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\Narrowed;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NarrowedInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\NewStaticTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReaderRepo;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\RepoInterface;
@@ -166,6 +167,35 @@ final class ProxyFactoryTest extends TestCase
         } finally {
             exec('rm -rf '.escapeshellarg($dir));
         }
+    }
+
+    #[Test]
+    public function newStaticInsideTheTargetReturnsAnAdvisedInstance(): void
+    {
+        $proxy = $this->factory()->newInstance(NewStaticTarget::class);
+
+        $created = $proxy->withNewStatic();
+        self::assertInstanceOf(AdvisedInterface::class, $created);
+        self::assertNotSame($proxy, $created);
+
+        Log::reset();
+        self::assertSame('new-static', $created->name());
+        self::assertSame(['around>name', 'around<'], Log::$entries);
+    }
+
+    #[Test]
+    public function runtimeIsSharedByAllInstancesOfAProxyClass(): void
+    {
+        $factory = $this->factory();
+        $class = $factory->createProxyClass(NewStaticTarget::class);
+        $first = new $class();
+        $second = new $class();
+        self::assertInstanceOf(NewStaticTarget::class, $second);
+        self::assertInstanceOf(AdvisedInterface::class, $first);
+        $first->__aopSetRuntime($factory->runtime());
+
+        self::assertSame('new-static', $second->name());
+        self::assertSame(['around>name', 'around<'], Log::$entries);
     }
 
     #[Test]

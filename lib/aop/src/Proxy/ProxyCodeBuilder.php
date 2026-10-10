@@ -42,12 +42,19 @@ final class ProxyCodeBuilder
         $class = $file->addNamespace(substr($className, 0, $position))->addClass(substr($className, $position + 1));
         $class->setReadOnly($target->isReadOnly());
         $class->addImplement(AdvisedInterface::class);
-        // No default value: readonly classes forbid property defaults; `isset()` detects the unset state.
-        $class->addProperty('__aopRuntime')->setPrivate()->setType(AopRuntime::class);
+        // One runtime per proxy class: `new static` inside the target and instances built before wiring are advised too.
+        // A static local instead of a static property: PHP rejects static properties (they count as readonly) on readonly classes.
+        $class->addMethod('__aopRuntime')
+            ->setPrivate()
+            ->setStatic()
+            ->setReturnType(AopRuntime::class)
+            ->setReturnNullable()
+            ->setBody("static \$current = null;\n\nreturn \$current = \$runtime ?? \$current;")
+            ->addParameter('runtime', null)->setType(AopRuntime::class)->setNullable();
         $class->addMethod('__aopSetRuntime')
             ->setPublic()
             ->setReturnType('void')
-            ->setBody('$this->__aopRuntime = $runtime;')
+            ->setBody('self::__aopRuntime($runtime);')
             ->addParameter('runtime')->setType(AopRuntime::class);
 
         return [$file, $class];
