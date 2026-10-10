@@ -84,7 +84,7 @@ Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop
 - Only method execution is a join point.
 - No introductions and no `perthis`/`pertarget`.
 - Interface proxies skip self-invocation; use `AopContext::currentProxy()`, `debug:aop` lists the affected calls.
-- By-reference parameters and return values are not advised.
+- Methods returning by reference are not advised; methods with by-reference parameters are.
 - Private, static, final (subclass strategy) and magic methods are not advised.
 
 ## Documentation

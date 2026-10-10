@@ -99,6 +99,18 @@ final class ProxyCodeBuilder
     }
 
     /**
+     * `[&$a, $b, ...$rest]`: the argument array handed to the runtime. By-reference parameters enter it as references,
+     * so spreading it into the target binds the caller's variables; a by-reference variadic tail keeps its references when spread.
+     */
+    public function argumentArray(\ReflectionMethod $method): string
+    {
+        return '['.implode(', ', array_map(
+            static fn (\ReflectionParameter $p): string => ($p->isVariadic() ? '...' : ($p->isPassedByReference() ? '&' : '')).'$'.$p->getName(),
+            $method->getParameters(),
+        )).']';
+    }
+
+    /**
      * Turns an expression into the statement(s) that end the method according to its return type.
      *
      * @param bool $earlyExit statement is followed by more code, so `void` must return explicitly

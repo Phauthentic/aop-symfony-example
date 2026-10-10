@@ -211,9 +211,12 @@ final class ProxyWeavingPassTest extends TestCase
             'class' => PlainService::class,
             'proxy' => $report['advised']['fixture.service']['proxy'],
             'strategy' => 'subclass',
-            'methods' => ['greet' => [BeanAspect::class.'::before', LogAspect::class.'::around']],
+            'methods' => [
+                'greet' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
+                'normalize' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
+            ],
         ], $report['advised']['fixture.service']);
-        self::assertSame(['greet' => [LogAspect::class.'::around']], $report['advised']['fixture.other']['methods']);
+        self::assertSame(['greet' => [LogAspect::class.'::around'], 'normalize' => [LogAspect::class.'::around']], $report['advised']['fixture.other']['methods'], 'by-reference parameters are advised');
         self::assertSame(['decorate' => [LogAspect::class.'::around']], $report['advised'][CallsService::class]['methods']);
         self::assertSame(FinalNoInterfaceService::class, $report['skipped'][FinalNoInterfaceService::class]['class']);
         self::assertStringContainsString('final', $report['skipped'][FinalNoInterfaceService::class]['reason']);

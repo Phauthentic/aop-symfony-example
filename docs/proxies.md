@@ -70,9 +70,11 @@ The bundle adds two more rules on top, described in [Symfony bundle](symfony.md#
 | Name starts with `__` | `constructors, destructors and magic methods are never advised` |
 | Returns by reference | `methods returning by reference are not supported` |
 | Final, subclass strategy | `final methods cannot be overridden by a subclass proxy` |
-| Has a by-reference parameter | `parameter $x is passed by reference, which is not supported` |
 | Has an object default value (`new` in initializer) | `parameter $x has an object default value (new in initializer) that cannot be reproduced` |
 | Not declared by an interface, interface strategy | `interface proxies can only advise public methods declared by an interface of the target` |
+
+By-reference parameters are eligible: the proxy keeps the `&` in its signature and passes those arguments to the runtime as references, so the target writes through to the caller's variables.
+Advice sees their values, see [Around advice](advice.md#around) for `proceed($args)`.
 
 A method that is eligible but matches no advisor is simply not overridden; the proxy keeps the inherited implementation (subclass) or forwards to the target without going through the runtime (interface).
 
@@ -260,7 +262,8 @@ With the subclass strategy `$this` already is the proxy, so you do not need it t
   `bin/console debug:aop` lists the `$this->advisedMethod()` calls it finds in interface-proxied classes.
 - `new self` inside a subclass-proxied target creates a plain, unadvised target.
   `new static` creates another proxy instance, which is advised.
-- By-reference parameters and return values disable advice for that method.
+- Methods returning by reference are never advised; by-reference parameters are advised.
+  `getArgs()` and `args()` bindings hand advice the values, so changing them in advice does not reach the caller; `proceed($args)` does.
 - Private, static, final (subclass strategy) and magic methods are never advised.
 - A proxy cannot be unserialised in a process that has not loaded its class.
   With the bundle the proxy autoloader is registered at boot, so `unserialize()` works after the kernel booted; without it, call `ProxyClassWriter::load()` or include the file first.

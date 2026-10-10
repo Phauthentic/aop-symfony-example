@@ -11,6 +11,8 @@ use Phauthentic\AOP\Exception\ProxyGenerationException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyFactory;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\RefAroundAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\RefBeforeAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\WrongReturnAspect;
 use Phauthentic\AOP\Tests\Fixtures\Log;
@@ -27,12 +29,15 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\NarrowedInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NewStaticTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReaderRepo;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTargetInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\RepoInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingFinal;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SignatureShapes;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -339,5 +344,106 @@ final class ProxyFactoryTest extends TestCase
         $worker = ProxyFactory::fromAspects([$aspect])->newInstance(CountingConstructor::class, ['p-']);
 
         self::assertSame('replaced', $worker->work('x'));
+    }
+
+    /**
+     * @return iterable<string, array{ProxyStrategy}>
+     */
+    public static function strategies(): iterable
+    {
+        yield 'subclass' => [ProxyStrategy::SUBCLASS];
+        yield 'interface' => [ProxyStrategy::INTERFACE];
+    }
+
+    /**
+     * @param list<object> $aspects
+     */
+    private static function refTarget(ProxyStrategy $strategy, array $aspects): RefTargetInterface
+    {
+        $factory = ProxyFactory::fromAspects($aspects, $strategy);
+        $proxy = ProxyStrategy::SUBCLASS === $strategy ? $factory->newInstance(RefTarget::class) : $factory->createProxy(new RefTarget());
+        \assert($proxy instanceof RefTargetInterface && $proxy instanceof AdvisedInterface);
+
+        return $proxy;
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function beforeAdviceSeesByReferenceValuesWithoutChangingThem(ProxyStrategy $strategy): void
+    {
+        $aspect = new RefBeforeAspect();
+        $proxy = self::refTarget($strategy, [$aspect]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(2, $n, 'the target writes through to the caller, advice overwriting its copies does not');
+        $list = ['a'];
+        self::assertSame(3, $proxy->appendAll($list, 'b', 'c'));
+        self::assertSame(['a', 'b', 'c'], $list);
+        $a = 1;
+        $b = 2;
+        $proxy->swap($a, $b);
+        self::assertSame([2, 1], [$a, $b]);
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([3, 6], [$x, $y]);
+
+        self::assertSame([[1], [['a'], 'b', 'c'], [1, 2], [3, 1, 2]], $aspect->args);
+        self::assertSame([1], $aspect->bound, 'args(n) binds the value');
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundProceedingOnceWritesThroughToTheCaller(ProxyStrategy $strategy): void
+    {
+        $proxy = self::refTarget($strategy, [new RefAroundAspect()]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(2, $n);
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([3, 6], [$x, $y]);
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundProceedingWithReplacedArgumentsGivesTheCallerTheTargetResult(ProxyStrategy $strategy): void
+    {
+        $around = new RefAroundAspect();
+        $before = new RefBeforeAspect();
+        $proxy = self::refTarget($strategy, [$around, $before]);
+
+        $around->replacement = [5];
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(6, $n);
+        self::assertSame([5], $before->bound, 'inner advice sees the replaced value');
+
+        $around->replacement = [3, 10, 20];
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([30, 60], [$x, $y], 'variadic by-reference slots are written back too');
+
+        $around->replacement = [['z']];
+        $list = ['a'];
+        self::assertSame(1, $proxy->appendAll($list));
+        self::assertSame(['z'], $list);
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundNotProceedingLeavesTheCallerVariableUntouched(ProxyStrategy $strategy): void
+    {
+        $around = new RefAroundAspect();
+        $around->proceed = false;
+        $proxy = self::refTarget($strategy, [$around]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(1, $n);
     }
 }

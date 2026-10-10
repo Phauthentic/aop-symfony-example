@@ -40,7 +40,7 @@ final class AopRuntime
 
     /**
      * @param class-string                              $class
-     * @param array<int|string, mixed>                  $args
+     * @param array<int|string, mixed>                  $args          by-reference parameters as references to the caller's variables
      * @param \Closure(array<int|string, mixed>): mixed $targetInvoker
      */
     public function invoke(object $proxy, object $target, string $class, string $method, array $args, \Closure $targetInvoker): mixed

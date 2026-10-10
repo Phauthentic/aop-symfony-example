@@ -13,6 +13,8 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\LegacyCountable;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NamedInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTargetInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShapeBase;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShapeFactoryInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
@@ -34,7 +36,8 @@ final class InterfaceProxyGeneratorTest extends TestCase
      */
     private function proxy(): array
     {
-        $generated = (new InterfaceProxyGenerator())->generate(new \ReflectionClass(FinalWithInterface::class), ['greet', 'shout', 'fluent']);
+        // Salted per test: the runtime is static per proxy class, so a class shared between tests would leak it.
+        $generated = (new InterfaceProxyGenerator())->generate(new \ReflectionClass(FinalWithInterface::class), ['greet', 'shout', 'fluent'], $this->name());
         self::assertSame(ProxyStrategy::INTERFACE, $generated->strategy);
         $proxyClass = ProxyClassWriter::load($generated);
         $target = new FinalWithInterface();
@@ -141,5 +144,33 @@ final class InterfaceProxyGeneratorTest extends TestCase
         $scaled = $proxy->scaled(3);
         self::assertInstanceOf(Square::class, $scaled, 'the proxy cannot stand in for a parent class, so the raw target result is returned');
         self::assertSame(6, $scaled->size);
+    }
+
+    #[Test]
+    public function byReferenceParametersWriteThroughToTheCallerWithAndWithoutRuntime(): void
+    {
+        $proxyClass = ProxyClassWriter::load((new InterfaceProxyGenerator())->generate(new \ReflectionClass(RefTarget::class), ['appendAll', 'increment', 'swap'], $this->name()));
+
+        foreach ([null, ProxyTestHelper::emptyRuntime()] as $runtime) {
+            $proxy = new $proxyClass(new RefTarget());
+            \assert($proxy instanceof RefTargetInterface && $proxy instanceof AdvisedInterface);
+            if (null !== $runtime) {
+                $proxy->__aopSetRuntime($runtime);
+            }
+            $n = 1;
+            $proxy->increment($n);
+            self::assertSame(2, $n);
+            $list = ['a'];
+            self::assertSame(3, $proxy->appendAll($list, 'b', 'c'));
+            self::assertSame(['a', 'b', 'c'], $list);
+            $a = 'a';
+            $b = 'b';
+            $proxy->swap($a, $b);
+            self::assertSame(['b', 'a'], [$a, $b]);
+            $x = 1;
+            $y = 2;
+            $proxy->scaleAll(10, $x, $y);
+            self::assertSame([10, 20], [$x, $y], 'unadvised interface methods delegate by reference too');
+        }
     }
 }

@@ -29,9 +29,6 @@ final class MethodEligibility
         }
 
         foreach ($method->getParameters() as $parameter) {
-            if ($parameter->isPassedByReference()) {
-                return sprintf('parameter $%s is passed by reference, which is not supported', $parameter->getName());
-            }
             if ($parameter->isDefaultValueAvailable() && !$parameter->isDefaultValueConstant() && is_object($parameter->getDefaultValue())) {
                 return sprintf('parameter $%s has an object default value (new in initializer) that cannot be reproduced', $parameter->getName());
             }

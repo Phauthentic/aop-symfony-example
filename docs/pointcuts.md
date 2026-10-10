@@ -240,7 +240,7 @@ With the bundle they are wrapped in an `AspectDefinitionException` whose message
 
 ## Never advised
 
-Private, static, abstract and magic methods (`__*`), constructors and destructors, methods returning by reference, methods with by-reference parameters, and methods with an object default value (`new` in initializer).
+Private, static, abstract and magic methods (`__*`), constructors and destructors, methods returning by reference, and methods with an object default value (`new` in initializer).
 Under the subclass strategy, final methods are also skipped.
 Under the interface strategy, only public methods declared by an interface of the target are advised.
 Enums, internal classes, abstract classes, anonymous classes, interfaces and traits are never proxied.

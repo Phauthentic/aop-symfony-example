@@ -58,11 +58,11 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                 $body = $this->builder->returnStatement($method, sprintf('%s->%s(%s)', self::TARGET, $name, $args), false, $wrap);
             } else {
                 $invoke = sprintf(
-                    'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, [%s], fn (array $args): mixed => %s->%s(...$args))',
+                    'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s->%s(...$args))',
                     self::TARGET,
                     $target->getName(),
                     var_export($name, true),
-                    $args,
+                    $this->builder->argumentArray($method),
                     self::TARGET,
                     $name,
                 );

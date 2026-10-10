@@ -14,6 +14,7 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\AttributedTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\CountingConstructor;
 use Phauthentic\AOP\Tests\Fixtures\Targets\LegacyCountable;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfReferencing;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfReferencingBase;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SignatureShapes;
@@ -42,7 +43,8 @@ final class SubclassProxyGeneratorTest extends TestCase
      */
     private function load(string $class, array $methods): string
     {
-        $proxyClass = ProxyClassWriter::load((new SubclassProxyGenerator())->generate(new \ReflectionClass($class), $methods));
+        // Salted per test: the runtime is static per proxy class, so a class shared between tests would leak it.
+        $proxyClass = ProxyClassWriter::load((new SubclassProxyGenerator())->generate(new \ReflectionClass($class), $methods, $this->name()));
         if (!is_a($proxyClass, $class, true) || !is_a($proxyClass, AdvisedInterface::class, true)) {
             self::fail($proxyClass.' is not an advised subclass of '.$class);
         }
@@ -234,5 +236,40 @@ final class SubclassProxyGeneratorTest extends TestCase
 
         self::assertSame([], $notices);
         self::assertCount(3, new $proxyClass());
+    }
+
+    #[Test]
+    public function byReferenceParametersWriteThroughToTheCallerWithAndWithoutRuntime(): void
+    {
+        $class = $this->load(RefTarget::class, ['appendAll', 'increment', 'scaleAll', 'swap']);
+        self::assertSame(
+            ProxyTestHelper::signature(new \ReflectionMethod(RefTarget::class, 'appendAll')),
+            ProxyTestHelper::signature(new \ReflectionMethod($class, 'appendAll')),
+        );
+        self::assertSame(
+            ProxyTestHelper::signature(new \ReflectionMethod(RefTarget::class, 'scaleAll')),
+            ProxyTestHelper::signature(new \ReflectionMethod($class, 'scaleAll')),
+        );
+
+        foreach ([null, ProxyTestHelper::emptyRuntime()] as $runtime) {
+            $proxy = new $class();
+            if (null !== $runtime) {
+                $proxy->__aopSetRuntime($runtime);
+            }
+            $n = 1;
+            $proxy->increment($n);
+            self::assertSame(2, $n);
+            $list = ['a'];
+            self::assertSame(3, $proxy->appendAll($list, 'b', 'c'));
+            self::assertSame(['a', 'b', 'c'], $list);
+            $a = 'a';
+            $b = 'b';
+            $proxy->swap($a, $b);
+            self::assertSame(['b', 'a'], [$a, $b]);
+            $x = 1;
+            $y = 2;
+            $proxy->scaleAll(10, $x, $y);
+            self::assertSame([10, 20], [$x, $y]);
+        }
     }
 }

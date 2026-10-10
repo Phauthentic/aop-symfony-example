@@ -68,6 +68,10 @@ final class KernelBootTest extends TestCase
         self::assertInstanceOf(AdvisedInterface::class, $service);
         self::assertSame('Hello x', $service->greet('x'));
         self::assertSame(['bean:greet', 'around>greet', 'greet', 'around<'], Log::$entries);
+
+        $name = ' y ';
+        $service->normalize($name);
+        self::assertSame('y', $name, 'by-reference parameters write through the proxy');
     }
 
     #[Test]

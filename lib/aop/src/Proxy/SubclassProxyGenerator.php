@@ -27,10 +27,10 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
             $args = $this->builder->forwardedArguments($method);
             $direct = sprintf('parent::%s(%s)', $name, $args);
             $invoke = sprintf(
-                'self::__aopRuntime()->invoke($this, $this, \\%s::class, %s, [%s], fn (array $args): mixed => parent::%s(...$args))',
+                'self::__aopRuntime()->invoke($this, $this, \\%s::class, %s, %s, fn (array $args): mixed => parent::%s(...$args))',
                 $target->getName(),
                 var_export($name, true),
-                $args,
+                $this->builder->argumentArray($method),
                 $name,
             );
 
