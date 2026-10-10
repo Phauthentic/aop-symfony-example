@@ -88,10 +88,16 @@ Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop
 
 ## Documentation
 
-- [What is AOP](docs/What-is-AOP.md)
-- [Pointcut expressions](docs/pointcuts.md)
-- [Advice](docs/advice.md)
-- [Symfony integration](docs/symfony.md)
+Start at the [documentation index](docs/README.md).
+
+- [Concepts](docs/concepts.md): terminology, Spring mapping, invocation and weaving flows
+- [Pointcut expressions](docs/pointcuts.md): grammar, designators, patterns, binding, errors
+- [Advice](docs/advice.md): the five advice types, parameters, ordering
+- [Proxies](docs/proxies.md): strategies, eligibility, generated code, limitations
+- [Symfony bundle](docs/symfony.md): installation, configuration, weaving, `debug:aop`, troubleshooting
+- [Standalone usage](docs/standalone.md): `ProxyFactory` without Symfony
+- [Examples](docs/examples.md): logging, validation, retry, caching, interface-proxied final class
+- [Architecture](docs/architecture.md): package layout, extension points, tests
 
 ## Development
 

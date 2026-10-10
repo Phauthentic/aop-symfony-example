@@ -1,58 +1,227 @@
 # Advice
 
 An aspect is a class marked `#[Aspect]`.
-Each advice is a method marked with one of the advice attributes and a pointcut expression.
+Each advice is a public, non-static method marked with exactly one advice attribute.
+A method may carry either one advice attribute or one `#[Pointcut]`, never both and never two.
+`AspectMetadataReader` throws `AspectDefinitionException` otherwise.
 
-| Attribute | Behaviour |
-|---|---|
-| `#[Before]` | Runs before the target. Throwing stops the call. |
-| `#[AfterReturning(pointcut, returning: 'name')]` | Runs after a normal return and receives the result. It cannot replace the result. |
-| `#[AfterThrowing(pointcut, throwing: 'name')]` | Runs when the target throws, receives the exception, then the exception is rethrown. |
-| `#[After]` | Runs always, like `finally`. |
-| `#[Around]` | Receives a `ProceedingJoinPointInterface`. Its return value becomes the method result. `proceed()` may be called zero or more times, `proceed($args)` replaces the arguments. |
+## The five advice types
 
-## Advice parameters
+| Attribute | Constructor | Behaviour |
+|---|---|---|
+| `#[Before(string $pointcut)]` | `Before('...')` | Runs before the target. Throwing stops the call; the exception propagates to the caller and to outer `AfterThrowing`/`After` advice. |
+| `#[AfterReturning(string $pointcut, ?string $returning = null)]` | `AfterReturning('...', returning: 'result')` | Runs after a normal return. Receives the result when `returning` names a parameter. Cannot replace the result. |
+| `#[AfterThrowing(string $pointcut, ?string $throwing = null)]` | `AfterThrowing('...', throwing: 'e')` | Runs when the target or an inner advice throws. Receives the exception when `throwing` names a parameter. The exception is rethrown afterwards. |
+| `#[After(string $pointcut)]` | `After('...')` | Runs always, like `finally`. Receives neither result nor exception. |
+| `#[Around(string $pointcut)]` | `Around('...')` | Receives a `ProceedingJoinPointInterface`. Its return value becomes the method result. May call `proceed()` zero, one or many times. |
 
-- A parameter typed `JoinPointInterface` or `ProceedingJoinPointInterface` receives the join point.
-- A parameter named like `returning` or `throwing` receives the result or the exception, restricted by its type.
-- A parameter named like a binding in the pointcut receives the bound value.
-- Any other parameter is a `BindingException` at container build time.
+The attributes live in `Phauthentic\AOP\Attribute\` and target methods only.
+`#[Aspect]`, `#[Order(int $value)]` and `#[Proxyable(ProxyStrategy $strategy)]` target classes.
 
-## Join point
-
-`getArgs()`, `getThis()` (the proxy), `getTarget()`, `getSignature()` and `toShortString()`.
-
-## Ordering
-
-1. `#[Order(n)]` on the aspect class, ascending.
-   Lower values have higher precedence and run outermost.
-   The default is `PHP_INT_MAX`.
-2. Within one aspect: Around, Before, After, AfterReturning, AfterThrowing.
-3. Advice of the same type in one aspect runs in declaration order.
-
-The highest precedence runs first on the way in and last on the way out.
-
-## Example
+### Around
 
 ```php
-#[Aspect]
-#[Order(3)]
-final class RetryAspect
+use Phauthentic\AOP\Attribute\Around;
+use Phauthentic\AOP\JoinPoint\ProceedingJoinPointInterface;
+
+#[Around('execution(* App\Service\**::*(..))')]
+public function around(ProceedingJoinPointInterface $pjp): mixed
 {
-    #[Around('@annotation(retry)')]
-    public function around(ProceedingJoinPointInterface $pjp, Retry $retry): mixed
-    {
-        for ($attempt = 1; ; ++$attempt) {
-            try {
-                return $pjp->proceed();
-            } catch (\Throwable $e) {
-                if ($attempt >= $retry->attempts) {
-                    throw $e;
-                }
-            }
-        }
+    $result = $pjp->proceed();              // continue with the original arguments
+    $other  = $pjp->proceed(['changed']);   // run the rest of the chain again with new arguments
+
+    return $result;
+}
+```
+
+`proceed(?array $args = null)` replaces the arguments for the remaining chain when given.
+The replaced arguments are what inner advice sees in `getArgs()` and what reaches the target.
+Not calling `proceed()` skips the target and all inner advice.
+
+The return type of an `#[Around]` method is yours to choose; `mixed` is the safe default.
+The runtime does not coerce the value to the target's return type, so returning the wrong type produces a `TypeError` in the generated proxy method.
+
+### AfterReturning and AfterThrowing filters
+
+The type of the `returning` or `throwing` parameter filters when the advice runs:
+
+```php
+#[AfterReturning('execution(* App\Service\**::*(..))', returning: 'result')]
+public function onString(string $result): void { /* only for string results */ }
+
+#[AfterThrowing('execution(* App\Service\**::*(..))', throwing: 'e')]
+public function onRuntime(\RuntimeException $e): void { /* only for RuntimeException and subclasses */ }
+```
+
+A result or exception that does not satisfy the parameter type skips the advice silently (`BindingPlan::acceptsReturnValue()` / `acceptsThrowable()`).
+`mixed`, an untyped parameter or `\Throwable` accept everything.
+Union and intersection types are honoured.
+A nullable type accepts `null`.
+
+Declaring `returning: 'x'` without a `$x` parameter is a `BindingException`.
+Leaving `returning` out is fine; the advice then runs after every normal return without seeing the value.
+
+## Parameters
+
+`ParameterBinder` decides once, at weave time, where every advice parameter comes from.
+Parameters may appear in any order.
+
+| Parameter | Source |
+|---|---|
+| Typed `JoinPointInterface` | The join point. |
+| Typed `ProceedingJoinPointInterface` | The join point with `proceed()`. Only allowed in `#[Around]`, and required there. |
+| Named like `returning:` | The return value, if its type matches. |
+| Named like `throwing:` | The thrown exception, if its type matches. |
+| Named like a binding in the pointcut | The bound value: an argument, the proxy, the target, or an attribute instance. See [Binding](pointcuts.md#binding). |
+| Anything else | `BindingException` at weave time: `Cannot bind parameter $x of Aspect::method(): ...`. |
+
+An advice method with no parameters is valid.
+
+```php
+#[Before('execution(* App\Service\StringService::greet(..)) && args(name, ..)')]
+public function before(string $name): void
+{
+    if ('' === $name) {
+        throw new \InvalidArgumentException('Name must not be empty');
     }
 }
 ```
 
-The complete demo lives in `src/Aspect`, run it with `bin/console app:aop-demo`.
+## The join point
+
+`JoinPointInterface`:
+
+| Method | Returns |
+|---|---|
+| `getArgs(): array` | The current arguments, positional, with variadic keys preserved. After `proceed($args)` inner advice sees the replaced arguments. |
+| `getThis(): object` | The proxy the call was made on. |
+| `getTarget(): object` | The advised instance: the proxy itself for subclass proxies, the wrapped object for interface proxies. |
+| `getSignature(): MethodSignature` | `className`, `methodName`, `method` (a `\ReflectionMethod`), `toShortString()` (`UserService::findUser(..)`), `toLongString()` (`App\Service\UserService::findUser(int, ...string)`). |
+| `toShortString(): string` | Shortcut for `getSignature()->toShortString()`. |
+
+`ProceedingJoinPointInterface` adds `proceed(?array $args = null): mixed`.
+
+`MethodSignature::className` is the class that declares the method, which may be a parent of the target class.
+
+## Ordering
+
+`AdvisorRegistry` sorts all advisors once with `AdvisorOrderComparator`.
+The sort key, in priority order:
+
+1. The aspect's `#[Order(n)]` value, ascending.
+   Lower values run outermost: first on the way in, last on the way out.
+   The default is `PHP_INT_MAX`.
+2. The advice type: Around, Before, After, AfterReturning, AfterThrowing.
+3. The declaration index of the advice inside its aspect (method order in the class).
+4. The aspect class name, as a string.
+
+Keys 3 and 4 mean that two aspects with the **same** order value interleave their advice instead of running as blocks.
+Two unordered aspects `Alpha` and `Zeta`, each with `#[Before]` methods `a()` and `b()`, run as `Alpha::a, Zeta::a, Alpha::b, Zeta::b`.
+Give each aspect its own `#[Order]` whenever relative order matters.
+
+Within the chain, Around sits outside Before, which sits outside After, AfterReturning and AfterThrowing.
+Because After wraps AfterReturning and AfterThrowing, it runs after them on the way out, which is the same as Spring Framework 5.2.7 and later.
+
+### Worked example: two aspects, five advice types
+
+Two aspects with every advice type, `A` with `#[Order(1)]` and `B` with `#[Order(2)]`, both matching `Greeter::greet()`.
+This is `AopRuntimeTest::twoAspectsFiveAdviceTypesRunInSpecOrder()` in `lib/aop/tests/Unit/Runtime/AopRuntimeTest.php`.
+
+```php
+#[Aspect]
+#[Order(1)]
+final class RecordingAspectA
+{
+    #[Around('execution(* App\Service\**::*(..))')]
+    public function around(ProceedingJoinPointInterface $pjp): mixed
+    {
+        Log::add('A.around>');
+        try {
+            return $pjp->proceed();
+        } finally {
+            Log::add('A.around<');
+        }
+    }
+
+    #[Before('execution(* App\Service\**::*(..))')]
+    public function before(JoinPointInterface $jp): void { Log::add('A.before'); }
+
+    #[After('execution(* App\Service\**::*(..))')]
+    public function after(JoinPointInterface $jp): void { Log::add('A.after'); }
+
+    #[AfterReturning('execution(* App\Service\**::*(..))', returning: 'result')]
+    public function afterReturning(mixed $result): void { Log::add('A.afterReturning'); }
+
+    #[AfterThrowing('execution(* App\Service\**::*(..))', throwing: 'e')]
+    public function afterThrowing(\Throwable $e): void { Log::add('A.afterThrowing'); }
+}
+// RecordingAspectB is identical with #[Order(2)] and the prefix "B.".
+```
+
+Chain built by the runtime (outermost first):
+
+```
+A.around, A.before, A.after, A.afterReturning, A.afterThrowing,
+B.around, B.before, B.after, B.afterReturning, B.afterThrowing,
+target
+```
+
+Trace when `greet()` returns normally:
+
+```
+A.around>
+A.before
+B.around>
+B.before
+target
+B.afterReturning
+B.after
+B.around<
+A.afterReturning
+A.after
+A.around<
+```
+
+Trace when `greet()` throws (the exception reaches the caller afterwards):
+
+```
+A.around>
+A.before
+B.around>
+B.before
+target
+B.afterThrowing
+B.after
+B.around<
+A.afterThrowing
+A.after
+A.around<
+```
+
+The same order applies in the demo app, where `LoggingAspect` is `#[Order(1)]`, `ValidationAspect` `#[Order(2)]`, `RetryAspect` `#[Order(3)]` and `CachingAspect` `#[Order(10)]`.
+See [Examples](examples.md) for the resulting trace.
+
+## Aspect instances
+
+Aspects are plain objects; the library never instantiates them itself.
+`AspectInstanceResolverInterface::get(string $aspectClass): object` supplies them.
+
+- With the bundle, `ContainerAspectInstanceResolver` pulls the aspect from a service locator on first use.
+  Aspects stay private services, may depend on anything, and a cycle between an aspect and a service it advises is fine because the aspect is resolved only when the first advised call happens.
+- With `ProxyFactory::fromAspects()`, `ArrayAspectInstanceResolver` holds the instances you pass.
+  It also accepts closures that create the aspect lazily.
+
+`AdviceInvoker` caches the instance after the first resolution, so an aspect is resolved once per interceptor.
+
+## Validation summary
+
+All of these fail at weave time (container build with the bundle, `ProxyFactory` construction standalone) with `AspectDefinitionException` or `BindingException`:
+
+- A class without `#[Aspect]` used as an aspect.
+- A method with more than one advice or pointcut attribute.
+- A non-public or static method carrying an advice or pointcut attribute.
+- A `#[Pointcut]` method that declares parameters or does not return `void`.
+- An `#[Around]` method without a `ProceedingJoinPointInterface` parameter.
+- A non-`Around` method with a `ProceedingJoinPointInterface` parameter.
+- `returning`/`throwing` naming a parameter that does not exist.
+- A parameter that is neither a join point, nor `returning`/`throwing`, nor bound by the pointcut.
