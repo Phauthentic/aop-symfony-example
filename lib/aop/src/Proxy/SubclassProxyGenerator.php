@@ -26,12 +26,13 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
         $this->builder->addIntroductions($class, $target, $introductions, $advisedMethods, '$this');
 
         // Advised introduced methods were added above.
-        foreach (array_filter($advisedMethods, $target->hasMethod(...)) as $name) {
+        foreach (array_diff($advisedMethods, array_keys(MethodEligibility::introducedMethods($target, array_keys($introductions)))) as $name) {
             $method = $target->getMethod($name);
             $args = $this->builder->forwardedArguments($method);
             $direct = sprintf('parent::%s(%s)', $name, $args);
             $invoke = sprintf(
-                'self::__aopRuntime()->invoke($this, $this, \\%s::class, %s, %s, fn (array $args): mixed => parent::%s(...$args))',
+                '%s->invoke($this, $this, \\%s::class, %s, %s, fn (array $args): mixed => parent::%s(...$args))',
+                ProxyCodeBuilder::RUNTIME,
                 $target->getName(),
                 var_export($name, true),
                 $this->builder->argumentArray($method),
@@ -39,7 +40,7 @@ final class SubclassProxyGenerator implements ProxyGeneratorInterface
             );
 
             $class->addMember($this->builder->signature($method)->setBody(
-                "if (null === self::__aopRuntime()) {\n"
+                'if (null === '.ProxyCodeBuilder::RUNTIME.") {\n"
                 .'    '.str_replace("\n", "\n    ", $this->builder->returnStatement($method, $direct, true))."\n"
                 ."}\n"
                 .$this->builder->returnStatement($method, $invoke, false),

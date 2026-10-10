@@ -8,6 +8,7 @@ use Phauthentic\AOP\Pointcut\Pattern\ModifierPattern;
 use Phauthentic\AOP\Pointcut\Pattern\NamePattern;
 use Phauthentic\AOP\Pointcut\Pattern\ParameterPattern;
 use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
+use Phauthentic\AOP\Proxy\MethodEligibility;
 
 final class ExecutionPointcut implements PointcutInterface
 {
@@ -64,14 +65,15 @@ final class ExecutionPointcut implements PointcutInterface
 
     /**
      * A target method: the target class itself, or any ancestor/interface that declares it.
-     * An introduced method (the target has none of that name): the introduced interface, or any ancestor of it that declares it.
+     * An introduced method (the target declares none of that name publicly, as in the generated proxy): the introduced
+     * interface, or any ancestor of it that declares it.
      */
     private function declaringTypeMatches(string $method, StaticMatchContext $ctx): bool
     {
         if (null === $this->declaringType) {
             return true;
         }
-        if ($ctx->targetClass->hasMethod($method)) {
+        if ($ctx->targetClass->hasMethod($method) && !isset(MethodEligibility::introducedMethods($ctx->targetClass, $ctx->introducedInterfaces)[$method])) {
             return $this->declaredBy($ctx->targetClass, $method);
         }
         foreach (self::introduced($ctx) as $interface) {

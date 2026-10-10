@@ -75,7 +75,8 @@ final class AopRuntime
         $strategy = $proxy instanceof $class ? ProxyStrategy::SUBCLASS : ProxyStrategy::INTERFACE;
         $rc = new \ReflectionClass($class);
         $introduced = self::introducedInterfaces($proxy, $rc);
-        $rm = $rc->hasMethod($method) ? $rc->getMethod($method) : MethodEligibility::introducedMethods($rc, $introduced)[$method];
+        // Same rule as the generators: a name the target does not declare publicly is the introduced method.
+        $rm = MethodEligibility::introducedMethods($rc, $introduced)[$method] ?? $rc->getMethod($method);
         $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy, $introduced);
         $advisors = $this->factory->matchedAdvisors($rc, $rm, $ctx);
         $arounds = array_values(array_map(

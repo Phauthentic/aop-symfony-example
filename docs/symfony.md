@@ -1,7 +1,7 @@
 # Symfony bundle
 
 `phauthentic/aop-bundle` (namespace `Phauthentic\AOP\Symfony\`) discovers aspects, weaves proxies at container build time and ships `debug:aop`.
-It requires Symfony 7.2 components (`config`, `dependency-injection`, `http-kernel`, `console`) and PHP 8.2.
+It requires Symfony 7.2 components (`config`, `dependency-injection`, `http-kernel`, `console`) and PHP 8.3.
 
 ## Installation
 
@@ -149,9 +149,11 @@ What it does for a service whose class matches `strip_final_include`, is not laz
 - Final methods declared in the class file become advisable; final methods inherited from parents or traits are still skipped.
 - If the class or an advised method is final, `FinalStripper` removes every `final` token from the class file and writes the copy to `<proxy_dir>/unfinalized/<hash>.php`.
   The copy keeps the namespace, class name and everything else; only the `final` modifiers are gone.
+  `__DIR__` and `__FILE__` in the copy are replaced by string literals of the original file's directory and path, so relative includes and paths keep working.
 - `<proxy_dir>/unfinalized/map.php` maps the class to its copy, its original file and its proxies.
   `ProxyAutoloader::register()`, run by `autoload.php` and by `PhauthenticAopBundle::boot()`, reads the map and prepends an autoloader to Composer's, so the copy is loaded instead of the original.
-- The woven definition gets the `container.no_preload` tag, and the original file is a container resource, so editing it rebuilds the container and the copy.
+- The woven definition gets the `container.no_preload` tag.
+  The original file of every class loaded from its copy, woven or not, is a container resource, so editing it rebuilds the container and the copy.
 - The proxy extends the class, so it *is* an `instanceof` the class and consumers see no difference.
 
 Risks and limits:
@@ -167,6 +169,8 @@ Risks and limits:
   `debug:aop` shows such services with a warning.
   If the class is not loaded yet, the pass loads the copy in the compiling process too, and the report says `finalStripped: true` without a warning.
 - Lazy services are never stripped; they are skipped with the usual reason.
+- `ReflectionClass::getFileName()` of a stripped class returns the path of the copy in `<proxy_dir>/unfinalized/`, not the original file.
+  Tools that read the class file through reflection, for example to parse annotations in docblocks or to map a class to its source, see the copy.
 
 `debug:aop` marks such services with `subclass (final stripped)` in the Strategy column and lists warnings in a "Warnings" section.
 

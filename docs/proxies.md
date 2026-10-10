@@ -20,7 +20,7 @@ This page covers the two strategies, how one is chosen, which classes and method
 | Final methods | Skipped (advised with the bundle's opt-in `strip_final`) | Advised if an interface declares them |
 | Non-interface public methods | Still callable | Do not exist on the proxy |
 | Target returns `$this` | The proxy (it is `$this`) | The proxy, via `__aopWrap()` |
-| Target returns another instance of its class | That instance, advised only if it is itself a proxy | A new proxy around it sharing the same runtime, via `__aopWrap()` |
+| Target returns another instance of its class | That instance, advised only if it is itself a proxy | A new proxy around it wired to the same runtime, via `__aopWrap()` |
 | Readonly target class | The proxy is readonly too | The proxy is readonly too |
 | Introduced interfaces | Implemented, delegating to one default implementation per proxy | Implemented, delegating to one default implementation per proxy |
 
@@ -100,14 +100,19 @@ interface AdvisedInterface
 }
 ```
 
-The runtime is stored once per proxy class, not per instance.
-Once any instance of a proxy class has received the runtime, all instances are advised, including those created with `new static` inside the target.
-Until then the proxy behaves exactly like the target: every advised method checks `self::__aopRuntime()` and calls through directly if it returns `null`.
-The runtime lives in a `static` local variable of a private static method because PHP forbids static properties on readonly classes.
+`__aopSetRuntime()` stores the runtime per instance, so proxies of the same class wired by different factories or kernels in one process each run their own aspects.
+It also records the runtime as the class-level fallback: the runtime most recently wired to any instance of the proxy class.
+Every advised method resolves `self::__aopRuntime($this)`, which returns the instance's own runtime, else the fallback.
+Instances that were never wired themselves are therefore advised once any instance of the class has received a runtime.
+These are instances created with `new static` inside the target, instances built before wiring, clones and unserialized copies.
+Until then the proxy behaves exactly like the target: when both are missing, every advised method calls through directly.
+
+Both live in `static` local variables of the private static method `__aopRuntime()`: the per-instance runtimes in a `WeakMap` keyed by the proxy, the fallback in a plain variable.
+PHP forbids static properties on readonly classes, and an instance property would put the runtime, with its closures and container references, into `serialize()` output.
 
 ### Subclass proxy
 
-Real output for `App\Service\StringService` from `var/cache/dev/phauthentic_aop/Phauthentic/AOP/Generated/App/Service/StringServiceProxy_aad667b31091.php`, trimmed to two methods:
+Real output for `App\Service\StringService` from `var/cache/dev/phauthentic_aop/Phauthentic/AOP/Generated/App/Service/StringServiceProxy_74b8f9b604df.php`, trimmed to two methods, without the introduced `Auditable` interface and its members (see [Introductions](introductions.md)):
 
 ```php
 <?php
@@ -116,18 +121,24 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Generated\App\Service;
 
-class StringServiceProxy_aad667b31091 extends \App\Service\StringService implements \Phauthentic\AOP\Proxy\AdvisedInterface
+class StringServiceProxy_74b8f9b604df extends \App\Service\StringService implements \Phauthentic\AOP\Proxy\AdvisedInterface
 {
-    private static function __aopRuntime(?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null): ?\Phauthentic\AOP\Runtime\AopRuntime
-    {
+    private static function __aopRuntime(
+        object $instance,
+        ?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null,
+    ): ?\Phauthentic\AOP\Runtime\AopRuntime {
         static $current = null;
+        static $instances = new \WeakMap();
+        if (null !== $runtime) {
+            $current = $instances[$instance] = $runtime;
+        }
 
-        return $current = $runtime ?? $current;
+        return $instances[$instance] ?? $current;
     }
 
     public function __aopSetRuntime(\Phauthentic\AOP\Runtime\AopRuntime $runtime): void
     {
-        self::__aopRuntime($runtime);
+        self::__aopRuntime($this, $runtime);
     }
 
     public function __aopGetTarget(): object
@@ -137,18 +148,18 @@ class StringServiceProxy_aad667b31091 extends \App\Service\StringService impleme
 
     public function flaky(string $input): string
     {
-        if (null === self::__aopRuntime()) {
+        if (null === self::__aopRuntime($this)) {
             return parent::flaky($input);
         }
-        return self::__aopRuntime()->invoke($this, $this, \App\Service\StringService::class, 'flaky', [$input], fn (array $args): mixed => parent::flaky(...$args));
+        return self::__aopRuntime($this)->invoke($this, $this, \App\Service\StringService::class, 'flaky', [$input], fn (array $args): mixed => parent::flaky(...$args));
     }
 
     public function greet(string $name, int $times = 1): string
     {
-        if (null === self::__aopRuntime()) {
+        if (null === self::__aopRuntime($this)) {
             return parent::greet($name, $times);
         }
-        return self::__aopRuntime()->invoke($this, $this, \App\Service\StringService::class, 'greet', [$name, $times], fn (array $args): mixed => parent::greet(...$args));
+        return self::__aopRuntime($this)->invoke($this, $this, \App\Service\StringService::class, 'greet', [$name, $times], fn (array $args): mixed => parent::greet(...$args));
     }
 }
 ```
@@ -162,7 +173,7 @@ Points to notice:
 
 ### Interface proxy
 
-Real output for `App\Service\OrderService` (a final class) from `OrderServiceProxy_90e0b43165d3.php`:
+Real output for `App\Service\OrderService` (a final class) from `OrderServiceProxy_264909e5f062.php`, without the introduced `Auditable` interface and its members:
 
 ```php
 <?php
@@ -171,18 +182,24 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Generated\App\Service;
 
-class OrderServiceProxy_90e0b43165d3 implements \Phauthentic\AOP\Proxy\AdvisedInterface, \App\Service\OrderServiceInterface
+class OrderServiceProxy_264909e5f062 implements \Phauthentic\AOP\Proxy\AdvisedInterface, \App\Service\OrderServiceInterface
 {
-    private static function __aopRuntime(?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null): ?\Phauthentic\AOP\Runtime\AopRuntime
-    {
+    private static function __aopRuntime(
+        object $instance,
+        ?\Phauthentic\AOP\Runtime\AopRuntime $runtime = null,
+    ): ?\Phauthentic\AOP\Runtime\AopRuntime {
         static $current = null;
+        static $instances = new \WeakMap();
+        if (null !== $runtime) {
+            $current = $instances[$instance] = $runtime;
+        }
 
-        return $current = $runtime ?? $current;
+        return $instances[$instance] ?? $current;
     }
 
     public function __aopSetRuntime(\Phauthentic\AOP\Runtime\AopRuntime $runtime): void
     {
-        self::__aopRuntime($runtime);
+        self::__aopRuntime($this, $runtime);
     }
 
     public function __construct(
@@ -204,15 +221,21 @@ class OrderServiceProxy_90e0b43165d3 implements \Phauthentic\AOP\Proxy\AdvisedIn
             return $result;
         }
 
-        return new static($result);
+        $proxy = new static($result);
+        $runtime = self::__aopRuntime($this);
+        if (null !== $runtime) {
+            $proxy->__aopSetRuntime($runtime);
+        }
+
+        return $proxy;
     }
 
     public function placeOrder(string $sku, int $qty): string
     {
-        if (null === self::__aopRuntime()) {
+        if (null === self::__aopRuntime($this)) {
             return $this->__aopTarget->placeOrder($sku, $qty);
         }
-        return self::__aopRuntime()->invoke($this, $this->__aopTarget, \App\Service\OrderService::class, 'placeOrder', [$sku, $qty], fn (array $args): mixed => $this->__aopTarget->placeOrder(...$args));
+        return self::__aopRuntime($this)->invoke($this, $this->__aopTarget, \App\Service\OrderService::class, 'placeOrder', [$sku, $qty], fn (array $args): mixed => $this->__aopTarget->placeOrder(...$args));
     }
 }
 ```
@@ -276,3 +299,5 @@ With the subclass strategy `$this` already is the proxy, so you do not need it t
 - When an interface declares a return type naming a parent class of the target, the interface proxy repeats that type and returns the raw target result instead of a proxy, because the proxy is not an instance of that parent.
 - `#[Around]` advice returning a value incompatible with the target's declared return type throws an `AdviceReturnException`.
 - Constructor calls are never advised, and neither are calls made before any instance of the proxy class has received the runtime.
+- Calls made inside the constructor are not advised for the first wired instance, because it receives its runtime only after construction.
+  Later instances of the same proxy class and `new static` instances resolve the class-level runtime, so such calls are advised and see a half-constructed object.

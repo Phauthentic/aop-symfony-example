@@ -18,6 +18,7 @@ use Phauthentic\AOP\Tests\Fixtures\Hierarchy\RepositoryInterface;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\Sub\ExtraRepository;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\UserRepository;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ClashingPrivateTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -213,5 +214,14 @@ final class ExecutionPointcutTest extends TestCase
         self::assertFalse($ofInterface->matchesClass($target, new StaticMatchContext($target)), 'without the introduction the target has no such ancestor');
         self::assertFalse($ofTarget->matchesMethod($introduced, $ctx), 'the target type does not declare introduced methods');
         self::assertTrue($this->pointcut()->matchesMethod($introduced, $ctx));
+    }
+
+    #[Test]
+    public function aNonPublicTargetMethodDoesNotHideTheIntroducedOneOfTheSameName(): void
+    {
+        $target = Reflect::cls(ClashingPrivateTarget::class);
+        $ctx = new StaticMatchContext($target, null, ProxyStrategy::SUBCLASS, [Auditable::class]);
+
+        self::assertTrue($this->pointcut(declaring: new TypePattern(Auditable::class))->matchesMethod(new \ReflectionMethod(Auditable::class, 'recordAudit'), $ctx));
     }
 }

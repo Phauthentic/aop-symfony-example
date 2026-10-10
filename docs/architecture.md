@@ -20,7 +20,7 @@ symfony-aop/
 ```
 
 The root `composer.json` installs both packages as symlinked path repositories, so edits in `lib/` are live.
-`phauthentic/aop` depends only on PHP 8.2 and `nette/php-generator`.
+`phauthentic/aop` depends only on PHP 8.3 and `nette/php-generator`.
 `phauthentic/aop-bundle` adds `symfony/config`, `symfony/dependency-injection`, `symfony/http-kernel` and `symfony/console` at `^7.2`.
 
 ## Core package: `Phauthentic\AOP\`

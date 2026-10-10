@@ -7,10 +7,13 @@ namespace Phauthentic\AOP\Tests\Unit\Proxy;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\GeneratedProxy;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
+use Phauthentic\AOP\Proxy\ProxyFactory;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Proxy\SubclassProxyGenerator;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionAspect;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ClashingPrivateTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\ReadonlyWorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
@@ -341,5 +344,24 @@ final class SubclassProxyGeneratorTest extends TestCase
         self::assertInstanceOf(Auditable::class, $proxy);
         $proxy->recordAudit('a');
         self::assertSame(['a'], $proxy->auditTrail());
+    }
+
+    /**
+     * The registry rejects such introductions; generation and runtime must still agree on which method is introduced.
+     */
+    #[Test]
+    public function anIntroducedMethodShadowedByAPrivateTargetMethodIsAdvisedAsTheIntroducedOne(): void
+    {
+        $generated = (new SubclassProxyGenerator())->generate(new \ReflectionClass(ClashingPrivateTarget::class), ['recordAudit'], $this->name(), [Auditable::class => AuditTrail::class]);
+        $class = ProxyClassWriter::load($generated);
+        $proxy = new $class();
+        self::assertInstanceOf(Auditable::class, $proxy);
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        $proxy->__aopSetRuntime(ProxyFactory::fromAspects([new IntroductionAspect()])->runtime());
+
+        $proxy->recordAudit('a');
+
+        self::assertSame(['a'], $proxy->auditTrail());
+        self::assertContains('introduced recordAudit', Log::$entries);
     }
 }

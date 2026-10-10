@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0bf887c88541466b11423d56c5ff50d7",
+    "content-hash": "4c3f8a27a694d2916dc4a4f5d6c6e4ca",
     "packages": [
         {
             "name": "nette/php-generator",
@@ -173,15 +173,15 @@
         },
         {
             "name": "phauthentic/aop",
-            "version": "dev-attempt2",
+            "version": "dev-feat/limitations",
             "dist": {
                 "type": "path",
                 "url": "lib/aop",
-                "reference": "2e7642ea56deda5776d8d55825c00ad077d0e126"
+                "reference": "46f3a0f22935707ad86e1ddfa346b6be924b26b1"
             },
             "require": {
                 "nette/php-generator": "^4.2",
-                "php": ">=8.2"
+                "php": ">=8.3"
             },
             "type": "library",
             "autoload": {
@@ -204,15 +204,16 @@
         },
         {
             "name": "phauthentic/aop-bundle",
-            "version": "dev-attempt2",
+            "version": "dev-feat/limitations",
             "dist": {
                 "type": "path",
                 "url": "lib/aop-bundle",
-                "reference": "14a043b1f5a9bf900e1fdbe05fddd6938fc75359"
+                "reference": "7f20fc207d0a18bb0675b129bb569ae3fe11e05d"
             },
             "require": {
+                "composer-runtime-api": "^2.0",
                 "phauthentic/aop": "@dev",
-                "php": ">=8.2",
+                "php": ">=8.3",
                 "symfony/config": "^7.2",
                 "symfony/console": "^7.2",
                 "symfony/dependency-injection": "^7.2",
@@ -5753,7 +5754,7 @@
     "platform": {
         "ext-ctype": "*",
         "ext-iconv": "*",
-        "php": ">=8.2"
+        "php": ">=8.3"
     },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"

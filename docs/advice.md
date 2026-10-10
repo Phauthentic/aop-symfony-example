@@ -259,6 +259,8 @@ Two proxies around one target therefore share a `pertarget` instance and get sep
 Scoped instances are created on the first advised call on that object.
 Both resolvers keep them in a `WeakMap` keyed by the scope object.
 The instance is released when the target or proxy is garbage-collected.
+This holds even when the aspect instance references its scope object, for example through a stored join point.
+The garbage collector can only break such a cycle through a `WeakMap` from PHP 8.3 on; on PHP 8.2 the entry would never be collected, which is why the library requires PHP 8.3.
 A closure registered with `ArrayAspectInstanceResolver` runs once per scope object, so register a closure rather than a ready instance for a scoped aspect.
 Introductions declared with `#[DeclareParents]` are not affected by the scope.
 

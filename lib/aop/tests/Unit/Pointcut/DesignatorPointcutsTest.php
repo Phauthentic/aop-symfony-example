@@ -28,6 +28,8 @@ use Phauthentic\AOP\Tests\Fixtures\Hierarchy\SpecialAudit;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\Sub\ExtraRepository;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\UserRepository;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Trackable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Tracked;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -325,6 +327,17 @@ final class DesignatorPointcutsTest extends TestCase
             self::assertTrue((new ThisPointcut(new TypePattern('Phauthentic\AOP\Tests\Fixtures\Introduction\Audit*')))->matchesMethod($method, $ctx), $strategy->value);
             self::assertFalse((new TargetPointcut($type))->matchesMethod($method, $ctx), $strategy->value);
             self::assertFalse((new WithinPointcut(new TypePattern(Auditable::class, false, true)))->matchesMethod($method, $ctx), $strategy->value);
+        }
+    }
+
+    #[Test]
+    public function thisMatchesParentsOfIntroducedInterfaces(): void
+    {
+        $target = Reflect::cls(WorkTarget::class);
+        foreach (ProxyStrategy::cases() as $strategy) {
+            $ctx = new StaticMatchContext($target, null, $strategy, [Tracked::class]);
+
+            self::assertTrue((new ThisPointcut(new TypePattern(Trackable::class)))->matchesMethod($target->getMethod('work'), $ctx), $strategy->value);
         }
     }
 }

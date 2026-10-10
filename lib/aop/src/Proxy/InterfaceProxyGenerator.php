@@ -7,7 +7,7 @@ namespace Phauthentic\AOP\Proxy;
 /**
  * JDK-like proxy: implements every interface of the target and delegates to the wrapped instance.
  * Self-invocation inside the target bypasses advice. A method returning the target itself returns the proxy,
- * one returning another instance of the target class (a wither) returns a new proxy around it sharing the runtime.
+ * one returning another instance of the target class (a wither) returns a new proxy around it wired to the same runtime.
  */
 final class InterfaceProxyGenerator implements ProxyGeneratorInterface
 {
@@ -41,7 +41,13 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                 return $result;
             }
 
-            return new static($result);
+            $proxy = new static($result);
+            $runtime = self::__aopRuntime($this);
+            if (null !== $runtime) {
+                $proxy->__aopSetRuntime($runtime);
+            }
+
+            return $proxy;
             PHP, self::TARGET, $target->getName()))
             ->addParameter('result')->setType('mixed');
 
@@ -61,7 +67,8 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                 $body = $this->builder->returnStatement($method, sprintf('%s->%s(%s)', self::TARGET, $name, $args), false, $wrap);
             } else {
                 $invoke = sprintf(
-                    'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s->%s(...$args))',
+                    '%s->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s->%s(...$args))',
+                    ProxyCodeBuilder::RUNTIME,
                     self::TARGET,
                     $target->getName(),
                     var_export($name, true),
@@ -70,7 +77,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                     $name,
                 );
                 $direct = sprintf('%s->%s(%s)', self::TARGET, $name, $args);
-                $body = "if (null === self::__aopRuntime()) {\n"
+                $body = 'if (null === '.ProxyCodeBuilder::RUNTIME.") {\n"
                     .'    '.str_replace("\n", "\n    ", $this->builder->returnStatement($method, $direct, true, $wrap))."\n"
                     ."}\n"
                     .$this->builder->returnStatement($method, $invoke, false, $wrap);

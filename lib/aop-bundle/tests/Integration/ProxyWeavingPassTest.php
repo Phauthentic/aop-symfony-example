@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Symfony\Tests\Integration;
 
+use Phauthentic\AOP\Exception\AspectDefinitionException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyClassName;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
@@ -12,6 +13,7 @@ use Phauthentic\AOP\Symfony\ProxyAutoloader;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ArgsAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ClashingAuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
@@ -20,6 +22,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ClashingAuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
@@ -327,6 +330,23 @@ final class ProxyWeavingPassTest extends TestCase
     }
 
     #[Test]
+    public function stripFinalTracksTheOriginalFileOfAClassLoadedFromItsCopyButNotWoven(): void
+    {
+        $class = 'Phauthentic\AOP\Symfony\Tests\Fixtures\Service\UnwovenFinalService';
+        $container = $this->compiled(['strip_final' => true], static function (ContainerBuilder $container) use ($class): void {
+            $container->register($class, $class)->setPublic(true);
+        });
+        $original = (string) realpath(\dirname((string) (new \ReflectionClass(PlainService::class))->getFileName()).'/UnwovenFinalService.php');
+
+        self::assertArrayNotHasKey($class, self::report($container)['advised']);
+        self::assertSame($class, $container->getDefinition($class)->getClass());
+        self::assertNotSame($original, (new \ReflectionClass($class))->getFileName(), 'this process loaded the copy');
+        self::assertContains($original, array_map(static fn (\Stringable $r): string => (string) $r, $container->getResources()));
+        self::assertSame(\dirname($original), \constant($class.'::DIR'), '__DIR__ in the copy is the original directory');
+        self::assertSame($original, \constant($class.'::FILE'), '__FILE__ in the copy is the original file');
+    }
+
+    #[Test]
     public function stripFinalOnlyRewritesClassesMatchingStripFinalInclude(): void
     {
         $report = self::report($this->compiled(['strip_final' => true, 'strip_final_include' => ['Nothing\**']]));
@@ -367,6 +387,18 @@ final class ProxyWeavingPassTest extends TestCase
             $report['advised']['fixture.audited']['methods'],
         );
         self::assertArrayNotHasKey('introductions', $report['advised']['fixture.service'], 'only services with introductions carry the key');
+    }
+
+    #[Test]
+    public function anIntroductionClashingWithATargetMethodFailsTheContainerBuild(): void
+    {
+        $this->expectException(AspectDefinitionException::class);
+        $this->expectExceptionMessage(sprintf('Aspect "%s" introduces interface "%s" into class "%s", which already declares method "recordAudit()"', ClashingAuditAspect::class, Auditable::class, ClashingAuditedService::class));
+
+        $this->compiled([], static function (ContainerBuilder $container): void {
+            $container->register(ClashingAuditAspect::class, ClashingAuditAspect::class)->setAutoconfigured(true);
+            $container->register(ClashingAuditedService::class, ClashingAuditedService::class)->setPublic(true);
+        });
     }
 
     #[Test]

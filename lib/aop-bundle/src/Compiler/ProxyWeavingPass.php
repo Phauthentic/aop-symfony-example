@@ -89,6 +89,10 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
             // Reflect the target only: this tracks its file for container freshness.
             $target = $container->getReflectionClass($class, false);
+            // Loaded from its unfinalized copy, woven or not: the reflection tracks the copy, the user edits the original.
+            if (null !== $copiedFrom = ProxyAutoloader::originalFile($class)) {
+                $container->addResource(new FileResource($copiedFrom));
+            }
             if (null === $target || [] !== $target->getAttributes(Aspect::class) || null !== MethodEligibility::isClassProxyable($target)) {
                 continue;
             }
@@ -112,7 +116,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
             if ($stripped) {
                 $source = $originalFile ?? (string) $target->getFileName();
                 $unfinalized[$class] ??= ['file' => basename(self::writeUnfinalizedCopy($proxyDir, $class, $source)), 'source' => $source, 'proxies' => []];
-                // The reflection of a copy tracks the copy; the original is what the user edits.
+                // A class loaded before weaving is not tracked above.
                 $container->addResource(new FileResource($source));
                 // Preloading the proxy preloads the final original, before any autoloader could load the copy.
                 $definition->addTag('container.no_preload');
@@ -269,7 +273,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
             throw new ProxyGenerationException(sprintf('Cannot read "%s" to remove "final" from class "%s".', $sourceFile, $class));
         }
 
-        return self::writeAtomically(sprintf('%s/%s/%s.php', $proxyDir, ProxyAutoloader::UNFINALIZED_DIR, hash('xxh128', $class."\0".$source)), FinalStripper::strip($source));
+        return self::writeAtomically(sprintf('%s/%s/%s.php', $proxyDir, ProxyAutoloader::UNFINALIZED_DIR, hash('xxh128', $class."\0".$source)), FinalStripper::strip($source, $sourceFile));
     }
 
     /**
@@ -375,10 +379,9 @@ final class ProxyWeavingPass implements CompilerPassInterface
     }
 
     /**
-     * The designators of a runtime advisor's expression that can be checked per call: args, @args, this, target,.
-     *
-     * @target and @within. Binding and type arguments look alike in the text (`this(auditable)` vs `this(Auditable)`),
-     * so every such designator counts, even one used only as a static type.
+     * The designators of a runtime advisor's expression that can be checked per call: `args`, `@args`, `this`,
+     * `target`, `@target` and `@within`. Binding and type arguments look alike in the text (`this(auditable)` vs
+     * `this(Auditable)`), so every such designator counts, even one used only as a static type.
      * ponytail: text scan; the exact runtime flag still comes from the pointcut, upgrade if the list must be precise.
      *
      * @return list<string>

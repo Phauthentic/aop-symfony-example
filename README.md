@@ -1,6 +1,6 @@
 # symfony-aop
 
-Aspect-oriented programming for PHP 8.2+ with a Symfony bundle.
+Aspect-oriented programming for PHP 8.3+ with a Symfony bundle.
 Pointcut expressions, advice types and ordering follow Spring AOP, adapted to PHP.
 
 - `lib/aop` is the framework-free core: pointcut language, advice, proxy generation.
@@ -8,6 +8,8 @@ Pointcut expressions, advice types and ordering follow Spring AOP, adapted to PH
 - `src/` is a demo application.
 
 ## Install
+
+Requires PHP 8.3 or later; the bundle requires Symfony 7.2 components and Composer 2.
 
 ```bash
 composer require phauthentic/aop phauthentic/aop-bundle

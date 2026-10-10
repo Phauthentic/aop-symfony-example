@@ -8,6 +8,7 @@ use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\Factory;
 use Nette\PhpGenerator\Literal;
 use Nette\PhpGenerator\Method;
+use Nette\PhpGenerator\Parameter;
 use Nette\PhpGenerator\PhpFile;
 use Nette\PhpGenerator\PsrPrinter;
 use Nette\PhpGenerator\Visibility;
@@ -21,6 +22,11 @@ use Phauthentic\AOP\Runtime\AopRuntime;
  */
 final class ProxyCodeBuilder
 {
+    /**
+     * Expression resolving the runtime inside a generated proxy method: the instance's own, else the class-level fallback.
+     */
+    public const RUNTIME = 'self::__aopRuntime($this)';
+
     private readonly Factory $factory;
 
     public function __construct()
@@ -42,19 +48,33 @@ final class ProxyCodeBuilder
         $class = $file->addNamespace(substr($className, 0, $position))->addClass(substr($className, $position + 1));
         $class->setReadOnly($target->isReadOnly());
         $class->addImplement(AdvisedInterface::class);
-        // One runtime per proxy class: `new static` inside the target and instances built before wiring are advised too.
-        // A static local instead of a static property: PHP rejects static properties (they count as readonly) on readonly classes.
+        // Per instance, so proxies of the same class wired by different factories or kernels keep their own runtime;
+        // the class-level fallback serves instances never wired themselves (`new static` inside the target, instances
+        // built before wiring, clones, unserialized copies). A WeakMap in a static local instead of a property keeps
+        // the runtime out of serialize(), var_dump() and readonly constraints; PHP rejects static properties on
+        // readonly classes.
         $class->addMethod('__aopRuntime')
             ->setPrivate()
             ->setStatic()
             ->setReturnType(AopRuntime::class)
             ->setReturnNullable()
-            ->setBody("static \$current = null;\n\nreturn \$current = \$runtime ?? \$current;")
-            ->addParameter('runtime', null)->setType(AopRuntime::class)->setNullable();
+            ->setBody(<<<'PHP'
+                static $current = null;
+                static $instances = new \WeakMap();
+                if (null !== $runtime) {
+                    $current = $instances[$instance] = $runtime;
+                }
+
+                return $instances[$instance] ?? $current;
+                PHP)
+            ->setParameters([
+                (new Parameter('instance'))->setType('object'),
+                (new Parameter('runtime'))->setType(AopRuntime::class)->setNullable()->setDefaultValue(null),
+            ]);
         $class->addMethod('__aopSetRuntime')
             ->setPublic()
             ->setReturnType('void')
-            ->setBody('self::__aopRuntime($runtime);')
+            ->setBody('self::__aopRuntime($this, $runtime);')
             ->addParameter('runtime')->setType(AopRuntime::class);
 
         return [$file, $class];
@@ -107,7 +127,8 @@ final class ProxyCodeBuilder
                 continue;
             }
             $invoke = sprintf(
-                'self::__aopRuntime()->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s(...$args))',
+                '%s->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s(...$args))',
+                self::RUNTIME,
                 $targetExpression,
                 $target->getName(),
                 var_export($name, true),
@@ -115,7 +136,7 @@ final class ProxyCodeBuilder
                 $delegate,
             );
             $class->addMember($signature->setBody(
-                "if (null === self::__aopRuntime()) {\n"
+                'if (null === '.self::RUNTIME.") {\n"
                 .'    '.str_replace("\n", "\n    ", $this->returnStatement($method, sprintf('%s(%s)', $delegate, $args), true))."\n"
                 ."}\n"
                 .$this->returnStatement($method, $invoke, false),

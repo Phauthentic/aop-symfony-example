@@ -25,6 +25,10 @@ The aspect is validated when its metadata is read (`AspectMetadataReader`), so a
 An `AspectDefinitionException` naming the aspect class is thrown when the interface does not exist or is a class, when the default implementation does not implement the interface, or when it is abstract or needs constructor arguments.
 When two introductions of the same interface apply to one target class, `AdvisorRegistry::introductionsFor()` throws an `AspectDefinitionException` naming both aspects.
 A target that already implements the interface gets nothing introduced.
+A target that declares or inherits a method of the same name as a method of the introduced interface, but does not implement the interface, is rejected the same way.
+The exception names the aspect, the interface, the target class and the method.
+This applies to public, protected and private methods alike: a public method with a different signature would make the proxy class fail to load, and a non-public one would hide the introduced method from callers inside the target.
+Rename the method, implement the interface in the target, or narrow the type pattern.
 
 ## Example
 
@@ -97,8 +101,7 @@ OrderService audit trail: placeOrder
 
 Both proxy strategies support introductions (see [Proxies](proxies.md)).
 The generated proxy class adds every introduced interface to its `implements` list.
-For each method of an introduced interface that the target does not declare publicly, the proxy gets a method that delegates to the default implementation.
-A public target method of the same name is used instead: the subclass proxy inherits it, the interface proxy forwards to the target.
+For each method of an introduced interface, the proxy gets a method that delegates to the default implementation.
 
 Each proxy instance gets its own default implementation instance, created on the first call of an introduced method.
 The instances live in a `WeakMap` keyed by the proxy, held in a static variable of the private method `__aopIntroduction()`, so readonly targets work too and the instance is released together with the proxy.
@@ -118,6 +121,8 @@ Introduced methods are join points like target methods, so advice applies to the
 | `this(App\Contract\Auditable)` | Yes | Yes: the proxy implements the interface |
 | `target(App\Contract\Auditable)` | No: the target class does not implement it | No |
 | `within(App\Contract\Auditable+)` | No: `within()` is about the target class | No |
+
+`this()` also matches the parent interfaces of an introduced interface, as `instanceof` does: with `Auditable extends Recordable`, `this(Recordable)` matches.
 
 `JoinPointInterface::getSignature()` of an introduced method describes the interface method, and `getTarget()` is the target, as for any other method.
 
@@ -141,5 +146,4 @@ To build the registry by hand, pass the result of `AdvisorFactory::introductions
 - A lazy service woven with the subclass strategy is wrapped in a Symfony lazy proxy of the target class, which does not implement the introduced interface; the inner instance does.
 - `clone` and `unserialize()` give the copy a new, empty default implementation instance on first use.
   A wither on an interface-proxied target returns a new proxy with its own default implementation instance.
-- With the interface strategy, a public target method that only an introduced interface declares is forwarded to the target but not advised.
 - When two introduced interfaces declare a method of the same name, the first interface in name order provides the implementation.

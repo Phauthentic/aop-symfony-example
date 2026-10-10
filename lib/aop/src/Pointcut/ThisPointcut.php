@@ -48,9 +48,12 @@ final class ThisPointcut implements PointcutInterface
         if (null === $this->subjectType) {
             return true;
         }
+        // The proxy is an instance of each introduced interface and of its parents, like the implemented interfaces below.
         foreach ($ctx->introducedInterfaces as $interface) {
-            if ($this->subjectType->matchesName($interface)) {
-                return true;
+            foreach ([$interface, ...(class_implements($interface) ?: [])] as $name) {
+                if ($this->subjectType->matches($name)) {
+                    return true;
+                }
             }
         }
         if (ProxyStrategy::SUBCLASS === $ctx->strategy) {

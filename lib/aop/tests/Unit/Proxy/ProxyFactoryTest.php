@@ -16,11 +16,13 @@ use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionOnlyAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\RefAroundAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\RefBeforeAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\TrackedIntroductionAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\WrongReturnAspect;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\BareTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\FinalWorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\ReadonlyWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Tracked;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Log;
@@ -221,6 +223,78 @@ final class ProxyFactoryTest extends TestCase
 
         self::assertSame('new-static', $second->name());
         self::assertSame(['around>name', 'around<'], Log::$entries);
+    }
+
+    /**
+     * @param class-string $class
+     * @param list<mixed>  $arguments
+     */
+    #[Test]
+    #[DataProvider('runtimeIsolationTargets')]
+    public function eachFactoryKeepsItsOwnAspectsOnInstancesOfTheSameProxyClass(string $class, ProxyStrategy $strategy, array $arguments, string $method): void
+    {
+        $firstAspect = new TargetsAspect();
+        $secondAspect = new TargetsAspect();
+        $first = ProxyFactory::fromAspects([$firstAspect], $strategy);
+        $second = ProxyFactory::fromAspects([$secondAspect], $strategy);
+        $build = static fn (ProxyFactory $f): object => ProxyStrategy::SUBCLASS === $strategy
+            ? $f->newInstance($class, $arguments)
+            : $f->createProxy(new $class(...$arguments));
+
+        $firstProxy = $build($first);
+        $secondProxy = $build($second);
+        self::assertSame($firstProxy::class, $secondProxy::class);
+
+        $firstProxy->{$method}('x');
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(0, $secondAspect->joinPoints);
+
+        $secondProxy->{$method}('x');
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(1, $secondAspect->joinPoints);
+    }
+
+    #[Test]
+    public function theRuntimeIsNotPartOfTheSerializedProxy(): void
+    {
+        $factory = $this->factory();
+        $proxy = $factory->newInstance(CountingConstructor::class, ['p-']);
+
+        $serialized = serialize($proxy);
+        self::assertFalse(str_contains($serialized, 'AopRuntime'), 'the runtime holds closures and services in a container');
+
+        $copy = unserialize($serialized);
+        self::assertInstanceOf(CountingConstructor::class, $copy);
+        Log::reset();
+        self::assertSame('p-x1', $copy->work('x'));
+        self::assertSame(['around>work', 'work', 'around<'], Log::$entries, 'an unserialized proxy uses the class-level runtime');
+    }
+
+    #[Test]
+    public function aWrappedWitherResultKeepsTheRuntimeOfItsOrigin(): void
+    {
+        $firstAspect = new TargetsAspect();
+        $secondAspect = new TargetsAspect();
+        $first = ProxyFactory::fromAspects([$firstAspect])->createProxy(new Builder());
+        ProxyFactory::fromAspects([$secondAspect])->createProxy(new Builder());
+        self::assertInstanceOf(BuilderInterface::class, $first);
+
+        $copy = $first->with('a');
+        $firstAspect->joinPoints = [];
+        $copy->value();
+
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(0, $secondAspect->joinPoints);
+    }
+
+    /**
+     * @return iterable<string, array{class-string, ProxyStrategy, list<mixed>, string}>
+     */
+    public static function runtimeIsolationTargets(): iterable
+    {
+        yield 'subclass' => [CountingConstructor::class, ProxyStrategy::SUBCLASS, ['p-'], 'work'];
+        yield 'readonly subclass' => [ReadonlyTarget::class, ProxyStrategy::SUBCLASS, ['ro'], 'value'];
+        yield 'interface' => [ReaderRepo::class, ProxyStrategy::INTERFACE, [], 'find'];
     }
 
     #[Test]
@@ -500,5 +574,15 @@ final class ProxyFactoryTest extends TestCase
         $proxy->recordAudit('a');
         self::assertSame(['a'], $proxy->auditTrail());
         self::assertSame('bare', $proxy->value());
+    }
+
+    #[Test]
+    public function thisOfAParentOfAnIntroducedInterfaceAdvisesTheIntroducedMethod(): void
+    {
+        $proxy = ProxyFactory::fromAspects([new TrackedIntroductionAspect()])->newInstance(BareTarget::class);
+
+        self::assertInstanceOf(Tracked::class, $proxy);
+        self::assertSame('tracked', $proxy->track());
+        self::assertSame(['this(Trackable) track'], Log::$entries);
     }
 }

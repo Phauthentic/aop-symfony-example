@@ -44,4 +44,16 @@ final class FinalStripperTest extends TestCase
         self::assertSame($expected, FinalStripper::strip($source));
         self::assertSame($expected, FinalStripper::strip($expected), 'idempotent');
     }
+
+    #[Test]
+    public function magicPathConstantsBecomeThoseOfTheOriginalFileWhenItIsGiven(): void
+    {
+        $source = "<?php\nfinal class A { const D = __DIR__; const F = __FILE__; const S = '__DIR__ __FILE__'; }\n";
+
+        self::assertSame(
+            "<?php\nclass A { const D = '/app/src'; const F = '/app/src/A\\'s.php'; const S = '__DIR__ __FILE__'; }\n",
+            FinalStripper::strip($source, "/app/src/A's.php"),
+        );
+        self::assertSame("<?php\nclass A { const D = __DIR__; const F = __FILE__; const S = '__DIR__ __FILE__'; }\n", FinalStripper::strip($source));
+    }
 }

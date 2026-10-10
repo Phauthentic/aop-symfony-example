@@ -13,8 +13,11 @@ use Phauthentic\AOP\Tests\Fixtures\Introduction\AlreadyAuditableWorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\BareTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ClashingPrivateTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ClashingPublicTarget;
 use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AdvisorRegistryTest extends TestCase
@@ -66,5 +69,27 @@ final class AdvisorRegistryTest extends TestCase
         $this->expectException(AspectDefinitionException::class);
         $this->expectExceptionMessage('"A" and "B" both introduce interface "'.Auditable::class.'"');
         $r->introductionsFor(Reflect::cls(WorkTarget::class));
+    }
+
+    /**
+     * @param class-string $target
+     */
+    #[DataProvider('clashingTargets')]
+    public function testAnIntroducedMethodNameTheTargetAlreadyDeclaresIsRejected(string $target): void
+    {
+        $r = new AdvisorRegistry([], [self::introduction('A', 'Phauthentic\AOP\Tests\Fixtures\Introduction\Clashing*')]);
+
+        $this->expectException(AspectDefinitionException::class);
+        $this->expectExceptionMessage(sprintf('Aspect "A" introduces interface "%s" into class "%s", which already declares method "recordAudit()"', Auditable::class, $target));
+        $r->introductionsFor(Reflect::cls($target));
+    }
+
+    /**
+     * @return iterable<string, array{class-string}>
+     */
+    public static function clashingTargets(): iterable
+    {
+        yield 'public, different signature' => [ClashingPublicTarget::class];
+        yield 'private' => [ClashingPrivateTarget::class];
     }
 }
