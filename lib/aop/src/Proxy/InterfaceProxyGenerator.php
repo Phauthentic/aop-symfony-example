@@ -52,7 +52,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             // The target's own declaration is compatible with every interface declaring the method.
             $method = $target->getMethod($name);
             $signature = $this->builder->signature($method)->setStatic($method->isStatic());
-            $returnType = self::targetToStatic($signature->getReturnType(), $target);
+            $returnType = self::returnType($method, $target);
             $signature->setReturnType($returnType);
             $wrap = !$method->isStatic() && self::mayHoldProxy($returnType, $target);
             $args = $this->builder->forwardedArguments($method);
@@ -125,15 +125,44 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     /**
      * The proxy is not an instance of the target class, so a return type naming the target class (or `self`,
      * already resolved to it) becomes `static`: the proxy implements every interface the target does, so this
-     * stays covariant with the interface declarations as long as they do not name a parent class of the target.
-     *
-     * ponytail: an interface returning a parent *class* of the target cannot be served by the proxy; that fails at load.
+     * stays covariant with the interface declarations. When an interface instead declares a *class* the proxy
+     * does not extend (a parent of the target), the proxy repeats that interface type and hands the raw result through.
      *
      * @param \ReflectionClass<covariant object> $target
      */
-    private static function targetToStatic(?string $type, \ReflectionClass $target): ?string
+    private function returnType(\ReflectionMethod $method, \ReflectionClass $target): ?string
     {
-        return null === $type ? null : (string) preg_replace('/(?<![\w\\\\])\\\\?'.preg_quote($target->getName(), '/').'(?![\w\\\\])/', 'static', $type);
+        $type = $this->builder->signature($method)->getReturnType();
+        if (null === $type) {
+            return null;
+        }
+        $static = (string) preg_replace('/(?<![\w\\\\])\\\\?'.preg_quote($target->getName(), '/').'(?![\w\\\\])/', 'static', $type);
+        if (!preg_match('/(?<![\w\\\\])static(?![\w\\\\])/', $static)) {
+            return $type;
+        }
+        foreach ($target->getInterfaces() as $interface) {
+            if (!$interface->hasMethod($method->getName())) {
+                continue;
+            }
+            $declared = $this->builder->signature($interface->getMethod($method->getName()))->getReturnType();
+            if (null !== $declared && self::namesAClass($declared)) {
+                return $declared;
+            }
+        }
+
+        return $static;
+    }
+
+    private static function namesAClass(string $type): bool
+    {
+        foreach (preg_split('/[|&()?]/', $type, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $name) {
+            $name = ltrim($name, '\\');
+            if (class_exists($name) && !interface_exists($name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

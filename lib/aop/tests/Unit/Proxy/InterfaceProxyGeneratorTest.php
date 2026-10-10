@@ -13,7 +13,10 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\LegacyCountable;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NamedInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\ShapeBase;
+use Phauthentic\AOP\Tests\Fixtures\Targets\ShapeFactoryInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\Square;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -123,5 +126,20 @@ final class InterfaceProxyGeneratorTest extends TestCase
         $proxy = new $proxyClass(new LegacyCountable());
         self::assertInstanceOf(\Countable::class, $proxy);
         self::assertCount(3, $proxy);
+    }
+
+    #[Test]
+    public function interfaceReturningParentClassOfTheTargetUsesTheInterfaceType(): void
+    {
+        $generated = (new InterfaceProxyGenerator())->generate(new \ReflectionClass(Square::class), ['scaled']);
+        $proxyClass = ProxyClassWriter::load($generated);
+        $proxy = new $proxyClass(new Square(2));
+        \assert($proxy instanceof ShapeFactoryInterface);
+
+        $returnType = (string) (new \ReflectionMethod($proxy, 'scaled'))->getReturnType();
+        self::assertSame('\\'.ShapeBase::class, '\\'.ltrim($returnType, '\\'));
+        $scaled = $proxy->scaled(3);
+        self::assertInstanceOf(Square::class, $scaled, 'the proxy cannot stand in for a parent class, so the raw target result is returned');
+        self::assertSame(6, $scaled->size);
     }
 }

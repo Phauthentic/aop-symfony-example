@@ -231,6 +231,6 @@ Points to notice:
 - Private, static, final (subclass strategy) and magic methods are never advised.
 - A proxy cannot be unserialised in a process that has not loaded its class.
   With the bundle the proxy autoloader is registered at boot, so `unserialize()` works after the kernel booted; without it, call `ProxyClassWriter::load()` or include the file first.
-- An interface proxy whose interface declares a return type naming a parent class of the target cannot be generated; the class fails to load because `static` is not covariant with that parent.
-- `#[Around]` advice returning a value incompatible with the target's declared return type triggers a `TypeError` in the proxy method.
+- When an interface declares a return type naming a parent class of the target, the interface proxy repeats that type and returns the raw target result instead of a proxy, because the proxy is not an instance of that parent.
+- `#[Around]` advice returning a value incompatible with the target's declared return type throws an `AdviceReturnException`.
 - Constructor calls are never advised, and neither are calls made before `__aopSetRuntime()`.

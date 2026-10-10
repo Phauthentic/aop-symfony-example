@@ -39,7 +39,9 @@ The replaced arguments are what inner advice sees in `getArgs()` and what reache
 Not calling `proceed()` skips the target and all inner advice.
 
 The return type of an `#[Around]` method is yours to choose; `mixed` is the safe default.
-The runtime does not coerce the value to the target's return type, so returning the wrong type produces a `TypeError` in the generated proxy method.
+The runtime does not coerce the value to the target's return type.
+When the final result of the chain does not satisfy the declared return type, `AopRuntime` throws an `AdviceReturnException` naming the Around advice, the returned type and the method's declared type.
+`int` is accepted for `float`, and `static` accepts the raw target instance because an interface proxy wraps it afterwards.
 
 ### AfterReturning and AfterThrowing filters
 
@@ -111,13 +113,13 @@ The sort key, in priority order:
 1. The aspect's `#[Order(n)]` value, ascending.
    Lower values run outermost: first on the way in, last on the way out.
    The default is `PHP_INT_MAX`.
-2. The advice type: Around, Before, After, AfterReturning, AfterThrowing.
-3. The declaration index of the advice inside its aspect (method order in the class).
-4. The aspect class name, as a string.
+2. The aspect class name, as a string.
+3. The advice type: Around, Before, After, AfterReturning, AfterThrowing.
+4. The declaration index of the advice inside its aspect (method order in the class).
 
-Keys 3 and 4 mean that two aspects with the **same** order value interleave their advice instead of running as blocks.
-Two unordered aspects `Alpha` and `Zeta`, each with `#[Before]` methods `a()` and `b()`, run as `Alpha::a, Zeta::a, Alpha::b, Zeta::b`.
-Give each aspect its own `#[Order]` whenever relative order matters.
+Key 2 means that aspects with the **same** order value run as blocks, sorted by class name, and never interleave.
+Two unordered aspects `Alpha` and `Zeta`, each with `#[Before]` methods `a()` and `b()`, run as `Alpha::a, Alpha::b, Zeta::a, Zeta::b`.
+Spring leaves the order between such aspects undefined; this library makes it deterministic but still arbitrary, so give each aspect its own `#[Order]` whenever relative order matters.
 
 Within the chain, Around sits outside Before, which sits outside After, AfterReturning and AfterThrowing.
 Because After wraps AfterReturning and AfterThrowing, it runs after them on the way out, which is the same as Spring Framework 5.2.7 and later.
