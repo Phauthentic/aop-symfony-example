@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Symfony\Tests\Fixtures;
 
 use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ArgsAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\CounterAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ArgsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CountedService;
@@ -95,5 +97,7 @@ final class TestKernel extends Kernel
         $services->set('fixture.counted_a', CountedService::class)->public();
         $services->set('fixture.counted_b', CountedService::class)->public();
         $services->set(CounterAspect::class);
+        $services->set(ArgsAspect::class);
+        $services->set('fixture.args', ArgsService::class)->public();
     }
 }

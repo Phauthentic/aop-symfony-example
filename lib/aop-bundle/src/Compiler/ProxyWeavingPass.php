@@ -31,7 +31,7 @@ use Symfony\Component\DependencyInjection\Reference;
 /**
  * Replaces advised services by generated proxies and records what it did in the weaving report.
  *
- * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
+ * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
  */
 final class ProxyWeavingPass implements CompilerPassInterface
 {
@@ -79,8 +79,8 @@ final class ProxyWeavingPass implements CompilerPassInterface
 
             [$strategy, $reason] = self::strategy($target, $configured, $definition);
             $introductions = array_map(static fn (IntroductionAdvisor $i): string => $i->defaultImpl, $registry->introductionsFor($target));
-            $methods = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id, array_keys($introductions));
-            if ([] === $methods && [] === $introductions) {
+            $advised = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id, array_keys($introductions));
+            if ([] === $advised && [] === $introductions) {
                 continue;
             }
             if (null === $strategy) {
@@ -91,7 +91,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
             $generator = ProxyStrategy::SUBCLASS === $strategy ? new SubclassProxyGenerator() : new InterfaceProxyGenerator();
             // Salted with the service id (bean names are registered per proxy class) and the proxy directory, so a
             // build never reuses a proxy class loaded from another cache directory (e.g. during cache:clear).
-            $proxy = $generator->generate($target, array_keys($methods), $id."\0".$proxyDir, $introductions);
+            $proxy = $generator->generate($target, array_keys($advised), $id."\0".$proxyDir, $introductions);
             $writer->write($proxy);
             // The dumper needs the class now, but it must not be loaded from its file: the dumper would then inline an
             // include of that file into lazy proxy class files using `$container->targetDir`, which is undefined there
@@ -119,12 +119,12 @@ final class ProxyWeavingPass implements CompilerPassInterface
                 $container->setDefinition($id, $proxyDefinition);
             }
             $runtime->addMethodCall('registerBeanName', [$proxy->className, $id]);
-            $report['advised'][$id] = ['class' => $class, 'proxy' => $proxy->className, 'strategy' => $strategy->value, 'methods' => $methods];
+            $report['advised'][$id] = ['class' => $class, 'proxy' => $proxy->className, 'strategy' => $strategy->value, 'methods' => array_map(static fn (array $advisors): array => array_column($advisors, 'advisor'), $advised), 'advisors' => $advised];
             if ([] !== $introductions) {
                 $report['advised'][$id]['introductions'] = $introductions;
             }
             if (ProxyStrategy::INTERFACE === $strategy) {
-                $report['advised'][$id]['selfInvocations'] = SelfInvocationScanner::scan($target, array_keys($methods));
+                $report['advised'][$id]['selfInvocations'] = SelfInvocationScanner::scan($target, array_keys($advised));
             }
         }
 
@@ -208,7 +208,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
      * @param \ReflectionClass<object> $target
      * @param list<class-string>       $introduced
      *
-     * @return array<string, list<string>> method name => advisor ids
+     * @return array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>> method name => matched advisors
      */
     private static function advisedMethods(AdvisorChainFactory $chains, \ReflectionClass $target, ProxyStrategy $strategy, string $id, array $introduced): array
     {
@@ -220,11 +220,41 @@ final class ProxyWeavingPass implements CompilerPassInterface
             }
             $advisors = $chains->matchedAdvisors($target, $method, $context);
             if ([] !== $advisors) {
-                $methods[$method->getName()] = array_map(static fn (Advisor $a): string => AspectScope::SINGLETON === $a->advice->scope ? $a->id : sprintf('%s (%s)::%s', $a->advice->aspectClass, $a->advice->scope->value, $a->advice->methodName), $advisors);
+                $methods[$method->getName()] = array_map(self::advisorEntry(...), $advisors);
             }
         }
 
         return $methods;
+    }
+
+    /**
+     * @return array{advisor: string, runtime: bool, designators: list<string>}
+     */
+    private static function advisorEntry(Advisor $advisor): array
+    {
+        $runtime = $advisor->pointcut->isRuntime();
+
+        return [
+            'advisor' => AspectScope::SINGLETON === $advisor->advice->scope ? $advisor->id : sprintf('%s (%s)::%s', $advisor->advice->aspectClass, $advisor->advice->scope->value, $advisor->advice->methodName),
+            'runtime' => $runtime,
+            'designators' => $runtime ? self::runtimeDesignators($advisor->advice->expression) : [],
+        ];
+    }
+
+    /**
+     * The designators of a runtime advisor's expression that can be checked per call: args, @args, this, target,.
+     *
+     * @target and @within. Binding and type arguments look alike in the text (`this(auditable)` vs `this(Auditable)`),
+     * so every such designator counts, even one used only as a static type.
+     * ponytail: text scan; the exact runtime flag still comes from the pointcut, upgrade if the list must be precise.
+     *
+     * @return list<string>
+     */
+    private static function runtimeDesignators(string $expression): array
+    {
+        preg_match_all('/(?<![\w@])(@?args|this|target|@target|@within)\s*\(/', $expression, $matches);
+
+        return array_values(array_unique($matches[1]));
     }
 
     /**

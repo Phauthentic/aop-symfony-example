@@ -54,6 +54,24 @@ final class DebugAopCommandTest extends TestCase
     }
 
     #[Test]
+    public function showsRuntimeAdviceWithItsDesignatorsAndExplainsIt(): void
+    {
+        $kernel = new TestKernel(TestKernel::newBaseDir());
+        try {
+            $tester = new CommandTester((new Application($kernel))->find('debug:aop'));
+            $tester->execute([]);
+            $output = preg_replace('/\s+/', ' ', $tester->getDisplay());
+        } finally {
+            $kernel->shutdown();
+        }
+
+        self::assertIsString($output);
+        self::assertStringContainsString('Advice Runtime', $output);
+        self::assertStringContainsString('yes (args)', $output);
+        self::assertStringContainsString('runtime: statically matched, but evaluated again per call; the advice may be skipped.', $output);
+    }
+
+    #[Test]
     public function listsSelfInvocationsThatBypassAdvice(): void
     {
         $kernel = new TestKernel(TestKernel::newBaseDir());

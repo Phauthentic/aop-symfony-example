@@ -136,28 +136,30 @@ $ bin/console debug:aop
 Advised services
 ----------------
 
- --------------------------- ----------- ------------ --------------------------------------------
-  Service                     Strategy    Method       Advice
- --------------------------- ----------- ------------ --------------------------------------------
-  App\Service\OrderService    interface   placeOrder   App\Aspect\AuditIntroductionAspect::record
+ --------------------------- ----------- ------------ -------------------------------------------- ------------------
+  Service                     Strategy    Method       Advice                                       Runtime
+ --------------------------- ----------- ------------ -------------------------------------------- ------------------
+  App\Service\OrderService    interface   placeOrder   App\Aspect\AuditIntroductionAspect::record   yes (this)
                                                        App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
-  App\Service\StringService   subclass    reverse      App\Aspect\AuditIntroductionAspect::record
+  App\Service\StringService   subclass    reverse      App\Aspect\AuditIntroductionAspect::record   yes (this)
                                                        App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
-  App\Service\StringService   subclass    upper        App\Aspect\AuditIntroductionAspect::record
+  App\Service\StringService   subclass    upper        App\Aspect\AuditIntroductionAspect::record   yes (this)
                                                        App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\CachingAspect::around
-  App\Service\StringService   subclass    greet        App\Aspect\AuditIntroductionAspect::record
+  App\Service\StringService   subclass    greet        App\Aspect\AuditIntroductionAspect::record   yes (this, args)
                                                        App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\ValidationAspect::before
-  App\Service\StringService   subclass    flaky        App\Aspect\AuditIntroductionAspect::record
+  App\Service\StringService   subclass    flaky        App\Aspect\AuditIntroductionAspect::record   yes (this)
                                                        App\Aspect\LoggingAspect::before
                                                        App\Aspect\LoggingAspect::after
                                                        App\Aspect\RetryAspect::around
- --------------------------- ----------- ------------ --------------------------------------------
+ --------------------------- ----------- ------------ -------------------------------------------- ------------------
+
+ runtime: statically matched, but evaluated again per call; the advice may be skipped.
 
 Introduced interfaces
 ---------------------
@@ -176,7 +178,10 @@ Skipped services
 ```
 
 The Advice column lists advisors in chain order (outermost first).
-An advisor appears as soon as its static pointcut half matches; `args()` and other runtime conditions are checked per call and are not reflected here.
+An advisor appears as soon as its static pointcut half matches.
+The Runtime column marks a method with `yes` when one of its advisors is evaluated again per call, and names the runtime designators of its expression, such as `args` or `this`.
+A static advisor adds nothing to that column, and a method without any runtime advisor shows `-`.
+The footnote below the table appears only when some row is runtime, because a runtime advisor may be skipped for a given call.
 Services with no matching advice at all are not listed, unless an introduction applies to them.
 The "Introduced interfaces" section lists, per service, each interface added by `#[DeclareParents]` and its default implementation (see [Introductions](introductions.md)).
 

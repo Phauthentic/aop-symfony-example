@@ -9,11 +9,13 @@ use Phauthentic\AOP\Proxy\ProxyClassName;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Symfony\Compiler\ProxyWeavingPass;
 use Phauthentic\AOP\Symfony\ProxyAutoloader;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ArgsAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ArgsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
@@ -57,17 +59,19 @@ final class ProxyWeavingPassTest extends TestCase
         $container->register(ExcludedService::class, ExcludedService::class)->setPublic(true);
         $container->register(AuditAspect::class, AuditAspect::class)->setAutoconfigured(true);
         $container->register('fixture.audited', AuditedService::class)->setPublic(true);
+        $container->register(ArgsAspect::class, ArgsAspect::class)->setAutoconfigured(true);
+        $container->register('fixture.args', ArgsService::class)->setPublic(true);
         BundleContainer::compile($container);
 
         return $container;
     }
 
     /**
-     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
+     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
      */
     private static function report(ContainerBuilder $container): array
     {
-        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>} $report */
+        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>} $report */
         $report = $container->getParameter('phauthentic_aop.weaving_report');
 
         return $report;
@@ -221,12 +225,39 @@ final class ProxyWeavingPassTest extends TestCase
                 'greet' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
                 'normalize' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
             ],
+            'advisors' => [
+                'greet' => [
+                    ['advisor' => BeanAspect::class.'::before', 'runtime' => false, 'designators' => []],
+                    ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+                ],
+                'normalize' => [
+                    ['advisor' => BeanAspect::class.'::before', 'runtime' => false, 'designators' => []],
+                    ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+                ],
+            ],
         ], $report['advised']['fixture.service']);
         self::assertSame(['greet' => [LogAspect::class.'::around'], 'normalize' => [LogAspect::class.'::around']], $report['advised']['fixture.other']['methods'], 'by-reference parameters are advised');
         self::assertSame(['decorate' => [LogAspect::class.'::around']], $report['advised'][CallsService::class]['methods']);
         self::assertSame(FinalNoInterfaceService::class, $report['skipped'][FinalNoInterfaceService::class]['class']);
         self::assertStringContainsString('final', $report['skipped'][FinalNoInterfaceService::class]['reason']);
         self::assertArrayNotHasKey(ExcludedService::class, $report['advised'] + $report['skipped']);
+    }
+
+    #[Test]
+    public function reportFlagsAdvisorsEvaluatedPerCallWithTheirRuntimeDesignators(): void
+    {
+        $report = self::report($this->compiled());
+
+        self::assertSame([
+            'scale' => [
+                ['advisor' => ArgsAspect::class.'::check', 'runtime' => true, 'designators' => ['args']],
+                ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+            ],
+            'label' => [
+                ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+            ],
+        ], $report['advised']['fixture.args']['advisors']);
+        self::assertSame(['scale' => [ArgsAspect::class.'::check', LogAspect::class.'::around'], 'label' => [LogAspect::class.'::around']], $report['advised']['fixture.args']['methods']);
     }
 
     #[Test]
