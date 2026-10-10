@@ -149,9 +149,11 @@ final class KernelBootTest extends TestCase
     {
         $service = self::container()->get(LazyService::class);
 
-        // A lazy proxy of the target class, not a ghost of the proxy class: see ProxyWeavingPass.
+        // A lazy proxy of the target class wrapping the advised instance, not a ghost of the proxy class: see the
+        // "Lazy services" section of docs/symfony.md for why.
         self::assertInstanceOf(LazyObjectInterface::class, $service);
         self::assertInstanceOf(LazyService::class, $service);
+        self::assertNotInstanceOf(AdvisedInterface::class, $service);
         self::assertFalse($service->isLazyObjectInitialized());
         self::assertSame([], Log::$entries);
 

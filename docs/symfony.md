@@ -109,6 +109,17 @@ When looking a name up, the runtime walks from the runtime class of the proxy up
 A lazy woven service stays lazy.
 `KernelBootTest::lazyServiceStaysLazyAndIsAdvised()` asserts that the container returns a `LazyObjectInterface` instance of the target class, that the constructor has not run, and that the first call constructs the target and is advised.
 
+The outer object is a Symfony lazy proxy of the target class that forwards to the advised instance.
+It is not an `AdvisedInterface`, and it does not implement interfaces added with `#[DeclareParents]`; call `initializeLazyObject()` to get the advised instance.
+
+A lazy ghost of the proxy class, which would make the outer object the advised one, was tried and rejected for two reasons:
+
+- A Symfony lazy ghost initializes on the first property access only.
+  Advised methods read the runtime from a per-class static, not from instance state, so on a ghost they run before initialization without advice (the runtime is set by the initializer), and the constructor of a class without properties never runs.
+- The ghost class file extends the proxy class and is required by `Container::createProxy()` before the service includes `autoload.php`.
+  In a fresh process where a bundle booting before `PhauthenticAopBundle` fetches the service, this fails with `Class "Phauthentic\AOP\Generated\…Proxy_…" not found`.
+  Loading the proxy from its file at build time instead of evaluating it makes the debug dumper prepend `include_once $container->targetDir.''.'/phauthentic_aop/….php';` to the ghost class file, where `$container` is undefined (Symfony 7.2), giving `Undefined variable $container`.
+
 ### Proxy autoloading
 
 Every woven definition has `autoload.php` as its `file`, which runs `ProxyAutoloader::register(__DIR__)` before the service is instantiated.
