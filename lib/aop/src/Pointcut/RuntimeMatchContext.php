@@ -13,12 +13,14 @@ final class RuntimeMatchContext
 
     /**
      * @param array<int|string, mixed> $args
+     * @param StaticMatchContext|null  $staticContext context used at weave time; lets combinators re-evaluate static parts at runtime
      */
     public function __construct(
         public readonly object $proxy,
         public readonly object $target,
         public readonly \ReflectionMethod $method,
         public readonly array $args,
+        public readonly ?StaticMatchContext $staticContext = null,
     ) {
     }
 

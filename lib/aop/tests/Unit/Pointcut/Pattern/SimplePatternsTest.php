@@ -1,0 +1,57 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Phauthentic\AOP\Tests\Unit\Pointcut\Pattern;
+
+use Phauthentic\AOP\Pointcut\Pattern\ModifierPattern;
+use Phauthentic\AOP\Pointcut\Pattern\NamePattern;
+use Phauthentic\AOP\Tests\Fixtures\Hierarchy\AbstractRepository;
+use Phauthentic\AOP\Tests\Fixtures\Hierarchy\UserRepository;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
+
+#[CoversClass(NamePattern::class)]
+#[CoversClass(ModifierPattern::class)]
+final class SimplePatternsTest extends TestCase
+{
+    /**
+     * @return iterable<string, array{string, string, bool}>
+     */
+    public static function nameCases(): iterable
+    {
+        yield 'exact' => ['find', 'find', true];
+        yield 'exact miss' => ['find', 'findAll', false];
+        yield 'star all' => ['*', 'anything', true];
+        yield 'prefix' => ['find*', 'findAll', true];
+        yield 'prefix miss' => ['find*', 'refind', false];
+        yield 'suffix' => ['*Action', 'indexAction', true];
+        yield 'middle' => ['get*Name', 'getFirstName', true];
+        yield 'dots are literal' => ['a.b', 'axb', false];
+        yield 'bean id with dots and dashes' => ['app.*-service', 'app.user-service', true];
+    }
+
+    #[Test]
+    #[DataProvider('nameCases')]
+    public function namePatternGlobs(string $pattern, string $name, bool $expected): void
+    {
+        self::assertSame($expected, (new NamePattern($pattern))->matches($name));
+    }
+
+    #[Test]
+    public function modifierPatternFiltersVisibility(): void
+    {
+        $public = new \ReflectionMethod(UserRepository::class, 'find');
+        $protected = new \ReflectionMethod(UserRepository::class, 'internal');
+        $protectedParent = new \ReflectionMethod(AbstractRepository::class, 'hydrate');
+
+        self::assertTrue((new ModifierPattern(null))->matches($public));
+        self::assertTrue((new ModifierPattern(null))->matches($protected));
+        self::assertTrue((new ModifierPattern('public'))->matches($public));
+        self::assertFalse((new ModifierPattern('public'))->matches($protected));
+        self::assertTrue((new ModifierPattern('protected'))->matches($protectedParent));
+        self::assertFalse((new ModifierPattern('protected'))->matches($public));
+    }
+}
