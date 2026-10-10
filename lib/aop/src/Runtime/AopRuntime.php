@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Runtime;
 
+use Phauthentic\AOP\Advice\AdviceType;
+use Phauthentic\AOP\Advisor\Advisor;
 use Phauthentic\AOP\Advisor\AdvisorChainFactory;
+use Phauthentic\AOP\Exception\AdviceReturnException;
 use Phauthentic\AOP\Interceptor\MethodInterceptorInterface;
 use Phauthentic\AOP\JoinPoint\MethodInvocation;
 use Phauthentic\AOP\JoinPoint\MethodSignature;
@@ -16,7 +19,7 @@ use Phauthentic\AOP\Proxy\ProxyStrategy;
  */
 final class AopRuntime
 {
-    /** @var array<string, array{0: list<MethodInterceptorInterface>, 1: MethodSignature}> */
+    /** @var array<string, array{0: list<MethodInterceptorInterface>, 1: MethodSignature, 2: list<string>}> */
     private array $chains = [];
 
     /** @var array<string, string> */
@@ -42,15 +45,22 @@ final class AopRuntime
      */
     public function invoke(object $proxy, object $target, string $class, string $method, array $args, \Closure $targetInvoker): mixed
     {
-        [$interceptors, $signature] = $this->chains[$proxy::class.'::'.$method] ??= $this->build($proxy, $class, $method);
+        [$interceptors, $signature, $arounds] = $this->chains[$proxy::class.'::'.$method] ??= $this->build($proxy, $class, $method);
 
-        return (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+        $result = (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+
+        // Only an Around advice can replace the target's result; the target itself is type-checked by PHP.
+        if ([] !== $arounds && !ReturnTypeCheck::accepts($signature->method->getReturnType(), $result, $proxy, $target, $signature->className)) {
+            throw new AdviceReturnException(sprintf('Around advice %s returned %s, but %s is declared to return %s.', implode(' or ', $arounds), get_debug_type($result), $signature->toShortString(), (string) $signature->method->getReturnType()));
+        }
+
+        return $result;
     }
 
     /**
      * @param class-string $class
      *
-     * @return array{0: list<MethodInterceptorInterface>, 1: MethodSignature}
+     * @return array{0: list<MethodInterceptorInterface>, 1: MethodSignature, 2: list<string>} interceptors, signature, ids of the Around advice in the chain
      */
     private function build(object $proxy, string $class, string $method): array
     {
@@ -58,11 +68,14 @@ final class AopRuntime
         $strategy = $proxy instanceof $class ? ProxyStrategy::SUBCLASS : ProxyStrategy::INTERFACE;
         $rc = new \ReflectionClass($class);
         $rm = $rc->getMethod($method);
+        $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy);
+        $advisors = $this->factory->matchedAdvisors($rc, $rm, $ctx);
+        $arounds = array_values(array_map(
+            static fn (Advisor $a): string => $a->id,
+            array_filter($advisors, static fn (Advisor $a): bool => AdviceType::AROUND === $a->advice->type),
+        ));
 
-        return [
-            $this->factory->chain($rc, $rm, new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy)),
-            MethodSignature::fromReflection($rm),
-        ];
+        return [$this->factory->chainFor($advisors, $ctx), MethodSignature::fromReflection($rm), $arounds];
     }
 
     /**

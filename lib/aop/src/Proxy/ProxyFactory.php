@@ -119,13 +119,15 @@ final class ProxyFactory
      *
      * @template T of object
      *
-     * @param class-string<T> $class
+     * @param class-string<T>          $class
+     * @param array<int|string, mixed> $constructorArguments
+     * @param string|null              $beanName             registered with the runtime so `bean()` matches
      *
      * @return T
      */
-    public function newInstance(string $class, mixed ...$constructorArguments): object
+    public function newInstance(string $class, array $constructorArguments = [], ?string $beanName = null): object
     {
-        $proxyClass = $this->createProxyClass($class);
+        $proxyClass = $this->createProxyClass($class, $beanName);
         if (!is_a($proxyClass, $class, true)) {
             throw new ProxyGenerationException(sprintf('Class "%s" uses the interface strategy; construct it yourself and wrap it with createProxy().', $class));
         }

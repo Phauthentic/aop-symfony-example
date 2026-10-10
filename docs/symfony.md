@@ -188,7 +188,7 @@ A skipped entry looks like:
 | Advice does not run, `debug:aop` does not list the service | The class is outside `include`, inside `exclude`, carries `#[Aspect]`, or no pointcut matches statically. | Check patterns; remember `*` does not cross `\`, use `**`. |
 | Advice listed but does not run for some calls | Runtime half of the pointcut (`args`, `@args`, bindings) does not match. | Check argument types and the binding parameter's type. |
 | Advice runs for external calls but not for `$this->method()` | Interface proxy; self-invocation bypasses it. | Make the class non-final so it gets a subclass proxy. |
-| `TypeError` in a `...Proxy_...` method | An `#[Around]` advice returned a value of the wrong type. | Return what the target's signature promises. |
+| `AdviceReturnException: Around advice ... returned int, but ... is declared to return string.` | An `#[Around]` advice returned a value of the wrong type. | Return what the target's signature promises. |
 | `ProxyGenerationException: Cannot write proxy file ...` | Proxy directory not writable. | Fix permissions on `proxy_dir`. |
 | Injected `OrderService` typed property receives a `TypeError` | Final class with interface proxy; the proxy is not an `OrderService`. | Type-hint the interface. |
 

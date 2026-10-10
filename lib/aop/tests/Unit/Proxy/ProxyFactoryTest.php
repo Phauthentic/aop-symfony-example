@@ -6,11 +6,13 @@ namespace Phauthentic\AOP\Tests\Unit\Proxy;
 
 use Phauthentic\AOP\Advisor\AdvisorRegistry;
 use Phauthentic\AOP\Aspect\ArrayAspectInstanceResolver;
+use Phauthentic\AOP\Exception\AdviceReturnException;
 use Phauthentic\AOP\Exception\ProxyGenerationException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyFactory;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\WrongReturnAspect;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Service\Greeter;
 use Phauthentic\AOP\Tests\Fixtures\Targets\Builder;
@@ -53,7 +55,7 @@ final class ProxyFactoryTest extends TestCase
         $factory = $this->factory();
         $before = CountingConstructor::$constructed;
 
-        $proxy = $factory->newInstance(CountingConstructor::class, 'p-');
+        $proxy = $factory->newInstance(CountingConstructor::class, ['p-']);
 
         self::assertInstanceOf(CountingConstructor::class, $proxy);
         self::assertSame($before + 1, CountingConstructor::$constructed);
@@ -156,7 +158,7 @@ final class ProxyFactoryTest extends TestCase
         $dir = sys_get_temp_dir().'/aop-factory-'.bin2hex(random_bytes(6));
         try {
             $factory = $this->factory(null, $dir);
-            $proxy = $factory->newInstance(ReadonlyTarget::class, 'ro');
+            $proxy = $factory->newInstance(ReadonlyTarget::class, ['ro']);
 
             self::assertSame('ro', $proxy->value());
             self::assertSame(['around>value', 'around<'], Log::$entries);
@@ -257,5 +259,43 @@ final class ProxyFactoryTest extends TestCase
         self::assertInstanceOf(BuilderInterface::class, $proxy);
 
         self::assertSame(\stdClass::class, $proxy->other()::class);
+    }
+
+    #[Test]
+    public function newInstanceRegistersTheBeanName(): void
+    {
+        $factory = $this->factory();
+
+        $plain = $factory->newInstance(CountingConstructor::class, ['p-'], 'plain.counter');
+        $named = $factory->newInstance(CountingConstructor::class, ['p-'], 'app.counter');
+
+        Log::reset();
+        $plain->work('x');
+        self::assertSame(['work'], Log::$entries, 'bean(plain.*) is excluded by the pointcut');
+        Log::reset();
+        $named->work('x');
+        self::assertSame(['around>work', 'work', 'around<'], Log::$entries);
+    }
+
+    #[Test]
+    public function aroundAdviceReturningTheWrongTypeIsReportedAsAdviceError(): void
+    {
+        $aspect = new WrongReturnAspect();
+        $worker = ProxyFactory::fromAspects([$aspect])->newInstance(CountingConstructor::class, ['p-']);
+
+        $this->expectException(AdviceReturnException::class);
+        $this->expectExceptionMessage('Around advice Phauthentic\\AOP\\Tests\\Fixtures\\Aspect\\WrongReturnAspect::replace returned int, but CountingConstructor::work(..) is declared to return string.');
+
+        $worker->work('x');
+    }
+
+    #[Test]
+    public function aroundAdviceReturningACompatibleValuePasses(): void
+    {
+        $aspect = new WrongReturnAspect();
+        $aspect->value = 'replaced';
+        $worker = ProxyFactory::fromAspects([$aspect])->newInstance(CountingConstructor::class, ['p-']);
+
+        self::assertSame('replaced', $worker->work('x'));
     }
 }

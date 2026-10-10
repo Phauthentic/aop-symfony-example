@@ -24,7 +24,7 @@ final class ProxyFactory
     public function createProxyClass(string $class, ?string $beanName = null): string;
 
     /** Subclass strategy: constructs an advised instance with the given constructor arguments. */
-    public function newInstance(string $class, mixed ...$constructorArguments): object;
+    public function newInstance(string $class, array $constructorArguments = [], ?string $beanName = null): object;
 
     /** Interface strategy: wraps an existing instance. Returns $target itself when nothing matches. */
     public function createProxy(object $target, ?string $beanName = null): object;
@@ -35,7 +35,7 @@ Which method to call depends on the strategy the class gets:
 
 | Strategy | Use | Why |
 |---|---|---|
-| Subclass (non-final class) | `newInstance($class, ...$args)` or `new (createProxyClass($class))(...)` plus `__aopSetRuntime()` | The proxy must be constructed instead of the target. |
+| Subclass (non-final class) | `newInstance($class, $args)` or `new (createProxyClass($class))(...)` plus `__aopSetRuntime()` | The proxy must be constructed instead of the target. |
 | Interface (final class with interface) | `createProxy($instance)` | The proxy wraps an instance you already built. |
 
 Calling the wrong one raises `ProxyGenerationException` with a message pointing to the right one.
@@ -111,7 +111,7 @@ final class TimingAspect
 $factory = ProxyFactory::fromAspects([new TimingAspect()]);
 
 // Non-final class: subclass proxy, constructed like the target.
-$greeter = $factory->newInstance(Greeter::class, 'Hey');
+$greeter = $factory->newInstance(Greeter::class, ['Hey']);
 echo $greeter->greet('Ada'), "\n";          // $greeter instanceof Greeter === true
 
 // Final class with an interface: interface proxy wrapping an existing instance.
@@ -159,9 +159,8 @@ Without a cache directory the code is passed to `eval()`.
 
 ## Bean names
 
-`createProxyClass($class, 'app.greeter')` and `createProxy($instance, 'app.greeter')` register the name with the runtime so that `bean(app.greeter)` matches.
+`createProxyClass($class, 'app.greeter')`, `newInstance($class, $args, 'app.greeter')` and `createProxy($instance, 'app.greeter')` register the name with the runtime so that `bean(app.greeter)` matches.
 Each bean name gets its own proxy class.
-`newInstance()` has no bean name parameter; use `createProxyClass()` with a name and construct the instance yourself if you need `bean()` with the subclass strategy.
 
 ## Lazy aspect instances
 

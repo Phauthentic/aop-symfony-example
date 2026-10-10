@@ -49,8 +49,20 @@ final class AdvisorChainFactory
      */
     public function chain(\ReflectionClass $class, \ReflectionMethod $method, StaticMatchContext $ctx): array
     {
+        return $this->chainFor($this->matchedAdvisors($class, $method, $ctx), $ctx);
+    }
+
+    /**
+     * Interceptors for advisors already matched statically, in that order.
+     *
+     * @param list<Advisor> $advisors
+     *
+     * @return list<MethodInterceptorInterface>
+     */
+    public function chainFor(array $advisors, StaticMatchContext $ctx): array
+    {
         $chain = [];
-        foreach ($this->matchedAdvisors($class, $method, $ctx) as $advisor) {
+        foreach ($advisors as $advisor) {
             $interceptor = $this->interceptor($advisor);
             $chain[] = $advisor->pointcut->isRuntime() ? new RuntimeGuardInterceptor($advisor->pointcut, $interceptor, $ctx) : $interceptor;
         }

@@ -67,6 +67,23 @@ final class AdvisorOrderComparatorTest extends TestCase
         );
     }
 
+    public function testAspectsWithEqualOrderRunAsBlocks(): void
+    {
+        $a = self::advisor(...);
+        $list = [
+            $a('Zeta', 'a', AdviceType::BEFORE, PHP_INT_MAX, 0),
+            $a('Alpha', 'a', AdviceType::BEFORE, PHP_INT_MAX, 0),
+            $a('Zeta', 'b', AdviceType::BEFORE, PHP_INT_MAX, 1),
+            $a('Alpha', 'around', AdviceType::AROUND, PHP_INT_MAX, 2),
+            $a('Alpha', 'b', AdviceType::BEFORE, PHP_INT_MAX, 1),
+        ];
+
+        self::assertSame(
+            ['Alpha::around', 'Alpha::a', 'Alpha::b', 'Zeta::a', 'Zeta::b'],
+            $this->sorted($list),
+        );
+    }
+
     public function testEqualAdvisorsCompareZero(): void
     {
         $a = self::advisor('A', 'm', AdviceType::BEFORE, 5, 0);
