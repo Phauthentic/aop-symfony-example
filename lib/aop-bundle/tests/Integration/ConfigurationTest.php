@@ -30,7 +30,7 @@ final class ConfigurationTest extends TestCase
         self::assertSame([
             'enabled' => true,
             'proxy_strategy' => 'auto',
-            'proxy_dir' => '%kernel.cache_dir%/phauthentic_aop',
+            'proxy_dir' => '%kernel.build_dir%/phauthentic_aop',
             'include' => ['App\**'],
             'exclude' => [],
         ], $this->process([]));

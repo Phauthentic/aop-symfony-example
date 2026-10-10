@@ -14,7 +14,7 @@ Register `Phauthentic\AOP\Symfony\PhauthenticAopBundle` in `config/bundles.php`.
 phauthentic_aop:
     enabled: true
     proxy_strategy: auto                            # auto | subclass | interface
-    proxy_dir: '%kernel.cache_dir%/phauthentic_aop'
+    proxy_dir: '%kernel.build_dir%/phauthentic_aop'
     include: ['App\**']                             # classes eligible for weaving
     exclude: []                                     # never woven
 ```
@@ -30,7 +30,9 @@ The AOP library, Symfony, Doctrine and all `#[Aspect]` classes are always exclud
 4. At runtime the proxy calls `AopRuntime`, which builds the interceptor chain and runs it.
    Aspect instances are resolved lazily from a service locator, so aspects can depend on any service without cycles.
 
-Proxies live in the cache directory, so `cache:clear` removes them and nothing is written to `src/`.
+Proxies live in the build directory next to the dumped container, so `cache:clear` removes them and nothing is written to `src/`.
+Every woven service includes the proxy directory's `autoload.php`, so proxy classes are loadable even when another bundle instantiates a woven service before this bundle boots.
+A lazy woven service gets a lazy proxy of its target class (the `proxy` tag) instead of a lazy ghost, so the proxy class is only needed once the service is initialized.
 Aspect and target classes are tracked as container resources, so in debug mode editing an aspect rebuilds the container.
 
 ## Debugging
@@ -49,9 +51,12 @@ Lists every advised service with strategy, methods and advisors, plus skipped se
 | Injection type | class or interface | the interface only |
 | `$this` in target | the proxy, self-invocation is advised | the target, self-invocation is not advised |
 | Constructor | untouched, runs once | untouched |
+| Target returns `$this` | the proxy | the proxy |
+| Target returns another instance of its class (wither) | that instance, advised if it is a proxy | a new proxy around it |
 
 `auto` uses `subclass` for non-final classes and `interface` for final classes that implement an interface.
 Final classes without an interface cannot be proxied and are reported by `debug:aop`.
+A tagged service is not interface-proxied when it has public methods that no interface declares, because tags such as `kernel.event_subscriber` or `controller.service_arguments` may reference them; `debug:aop` reports it as skipped.
 Override per class with `#[Proxyable(ProxyStrategy::INTERFACE)]`.
 
 ## Without Symfony
@@ -67,6 +72,6 @@ $class = $factory->createProxyClass(Service::class); // subclass strategy
 - No introductions (`@DeclareParents`) and no `perthis`/`pertarget` aspects.
 - Interface proxies do not advise self-invocation.
 - By-reference parameters and return values are not advised.
-- `new static` inside a target returns an unadvised instance.
+- With the subclass strategy, `new static` inside a target returns an unadvised instance.
 - Proxies cannot be unserialized in another process.
 - Only method execution is a join point.

@@ -13,6 +13,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
@@ -39,6 +40,7 @@ final class TestKernel extends Kernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+        yield new EarlyBootBundle();
         yield new PhauthenticAopBundle();
     }
 
@@ -68,14 +70,17 @@ final class TestKernel extends Kernel
         $services = $container->services()->defaults()->autowire()->autoconfigure();
         $services->set('fixture.service', PlainService::class)->public();
         $services->set('fixture.other', PlainService::class)->public();
-        // Hot path services get no inline include in the dumped container, so their proxy class must be autoloaded.
+        // Hot path services get no inlined class includes in the dumped container, only their definition file.
         $services->set('fixture.hot', PlainService::class)->public()->tag('container.hot_path');
         $services->set(FinalService::class)->public();
         $services->alias(ShoutInterface::class, FinalService::class)->public();
         $services->set(LazyService::class)->lazy()->public();
+        $services->set('fixture.early', PlainService::class)->public();
+        $services->set('fixture.early_lazy', LazyService::class)->lazy()->public();
         $services->set(CallsService::class)->call('setPrefix', ['pre-'])->public();
         $services->set(FactoryCreatedService::class)->factory([FactoryCreatedService::class, 'create'])->public();
         $services->set(FinalNoInterfaceService::class)->public();
+        $services->set(OrderSubscriber::class);
         $services->set(ExcludedService::class)->public();
         $services->set(LogAspect::class);
         $services->set(BeanAspect::class);

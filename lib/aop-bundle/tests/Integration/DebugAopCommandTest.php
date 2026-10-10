@@ -9,6 +9,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\TestKernel;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -40,5 +41,7 @@ final class DebugAopCommandTest extends TestCase
         self::assertMatchesRegularExpression('/'.preg_quote(FinalService::class, '/').'\s+interface/', $output);
         self::assertStringContainsString(FinalNoInterfaceService::class, $output);
         self::assertStringContainsString('final and implements no interface', $output);
+        self::assertStringContainsString(OrderSubscriber::class, $output);
+        self::assertStringContainsString('an interface proxy would hide method onOrderPlaced(), which tag kernel.event_subscriber may reference', $output);
     }
 }

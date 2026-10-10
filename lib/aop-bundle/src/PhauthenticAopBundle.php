@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Phauthentic\AOP\Symfony;
 
 use Phauthentic\AOP\Attribute\Aspect;
-use Phauthentic\AOP\Proxy\ProxyClassName;
-use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Symfony\Compiler\AspectCollectorPass;
 use Phauthentic\AOP\Symfony\Compiler\ProxyWeavingPass;
 use Symfony\Component\DependencyInjection\ChildDefinition;
@@ -16,9 +14,6 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 final class PhauthenticAopBundle extends Bundle
 {
-    /** @var (\Closure(string): void)|null */
-    private ?\Closure $autoloader = null;
-
     public function build(ContainerBuilder $container): void
     {
         $container->registerAttributeForAutoconfiguration(
@@ -33,33 +28,14 @@ final class PhauthenticAopBundle extends Bundle
     }
 
     /**
-     * Generated proxy classes live in the proxy directory, not in any Composer autoload path.
-     * A dumped container may need them in a fresh process (also as parents of lazy ghost classes).
+     * Woven services include the proxy directory's autoload file themselves; registering it here as well keeps proxy
+     * classes loadable for code that needs them without instantiating a service first (e.g. unserialize()).
      */
     public function boot(): void
     {
-        if (null === $this->container || !$this->container->hasParameter(ProxyWeavingPass::PROXY_DIR)) {
-            return;
-        }
-        $dir = $this->container->getParameter(ProxyWeavingPass::PROXY_DIR);
-        if (!\is_string($dir)) {
-            return;
-        }
-
-        $writer = new ProxyClassWriter($dir);
-        $this->autoloader = static function (string $class) use ($writer): void {
-            if (str_starts_with($class, ProxyClassName::NAMESPACE_PREFIX) && is_file($file = $writer->pathFor($class))) {
-                require $file;
-            }
-        };
-        spl_autoload_register($this->autoloader);
-    }
-
-    public function shutdown(): void
-    {
-        if (null !== $this->autoloader) {
-            spl_autoload_unregister($this->autoloader);
-            $this->autoloader = null;
+        $dir = $this->container?->hasParameter(ProxyWeavingPass::PROXY_DIR) ? $this->container->getParameter(ProxyWeavingPass::PROXY_DIR) : null;
+        if (\is_string($dir)) {
+            ProxyAutoloader::register($dir);
         }
     }
 }

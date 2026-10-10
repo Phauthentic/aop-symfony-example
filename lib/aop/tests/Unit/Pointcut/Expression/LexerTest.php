@@ -46,6 +46,10 @@ final class LexerTest extends TestCase
             [TokenType::Keyword, 'bean'], [TokenType::LParen, '('], [TokenType::Word, 'app.my-service_*'],
             [TokenType::RParen, ')'], [TokenType::Eof, ''],
         ]];
+        yield 'bean FQCN service id' => ['bean(App\Service\*) || x', [
+            [TokenType::Keyword, 'bean'], [TokenType::LParen, '('], [TokenType::Word, 'App\Service\*'],
+            [TokenType::RParen, ')'], [TokenType::Or, '||'], [TokenType::Word, 'x'], [TokenType::Eof, ''],
+        ]];
         yield 'reference' => ['App\Aspect\Common::layer()', [
             [TokenType::Word, 'App\Aspect\Common'], [TokenType::DoubleColon, '::'], [TokenType::Word, 'layer'],
             [TokenType::LParen, '('], [TokenType::RParen, ')'], [TokenType::Eof, ''],

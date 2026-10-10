@@ -46,9 +46,10 @@ final class AtArgsPointcut implements PointcutInterface
             if (null === $entry) {
                 continue;
             }
+            $restriction = $entry instanceof BindingSpec ? $entry->classRestriction() : null;
             $pattern = match (true) {
                 $entry instanceof TypePatternNode => new TypePattern($entry->pattern, false, $entry->includeSubtypes),
-                null !== $entry->typeRestriction => new TypePattern($entry->typeRestriction, false, true),
+                null !== $restriction => new TypePattern($restriction, false, true),
                 default => null,
             };
             $attribute = is_object($args[$i]) ? self::attribute($args[$i], $pattern) : null;

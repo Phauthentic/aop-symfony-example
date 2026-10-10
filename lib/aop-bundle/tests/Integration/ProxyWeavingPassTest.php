@@ -8,6 +8,7 @@ use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyClassName;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Symfony\Compiler\ProxyWeavingPass;
+use Phauthentic\AOP\Symfony\ProxyAutoloader;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
@@ -16,6 +17,8 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -40,7 +43,11 @@ final class ProxyWeavingPassTest extends TestCase
         $container->register(FinalService::class, FinalService::class)->setPublic(true)->addTag('custom.tag', ['a' => 1]);
         $container->register(CallsService::class, CallsService::class)->setPublic(true)->addMethodCall('setPrefix', ['pre-']);
         $container->register(FactoryCreatedService::class, FactoryCreatedService::class)->setPublic(true)->setFactory([FactoryCreatedService::class, 'create']);
+        $container->register(FactoryCreatedService::class.'.with_file', FactoryCreatedService::class)->setPublic(true)->setFile(__FILE__);
+        $container->register(LazyService::class, LazyService::class)->setPublic(true)->setLazy(true);
         $container->register(FinalNoInterfaceService::class, FinalNoInterfaceService::class)->setPublic(true);
+        $container->register(OrderSubscriber::class, OrderSubscriber::class)->addTag('kernel.event_subscriber');
+        $container->register('fixture.untagged_subscriber', OrderSubscriber::class)->setPublic(true);
         $container->register(ExcludedService::class, ExcludedService::class)->setPublic(true);
         BundleContainer::compile($container);
 
@@ -71,9 +78,40 @@ final class ProxyWeavingPassTest extends TestCase
         self::assertTrue(is_subclass_of($proxyClass, AdvisedInterface::class));
         self::assertEquals([['__aopSetRuntime', [new Reference('phauthentic_aop.runtime')]]], $definition->getMethodCalls());
 
-        $dir = $container->getParameterBag()->resolveValue('%kernel.cache_dir%/phauthentic_aop');
+        $dir = $container->getParameterBag()->resolveValue('%kernel.build_dir%/phauthentic_aop');
         self::assertIsString($dir);
         self::assertFileExists((new ProxyClassWriter($dir))->pathFor($proxyClass));
+    }
+
+    #[Test]
+    public function wovenServicesIncludeTheProxyAutoloadFile(): void
+    {
+        $container = $this->compiled();
+        $dir = $container->getParameterBag()->resolveValue('%kernel.build_dir%/phauthentic_aop');
+        self::assertIsString($dir);
+        $file = $dir.'/'.ProxyAutoloader::FILE;
+
+        self::assertSame($file, $container->getDefinition('fixture.service')->getFile());
+        self::assertSame($file, $container->getDefinition(FinalService::class)->getFile());
+        self::assertSame(ProxyAutoloader::fileContents(), file_get_contents($file));
+    }
+
+    #[Test]
+    public function lazyServiceGetsALazyProxyOfTheTargetClass(): void
+    {
+        $definition = $this->compiled()->getDefinition(LazyService::class);
+
+        self::assertTrue($definition->isLazy());
+        self::assertSame([['interface' => LazyService::class]], $definition->getTag('proxy'));
+    }
+
+    #[Test]
+    public function serviceWithAFileIsDecoratedInsteadOfSubclassed(): void
+    {
+        $container = $this->compiled();
+
+        self::assertSame(__FILE__, $container->getDefinition(FactoryCreatedService::class.'.with_file.aop_target')->getFile());
+        self::assertSame('interface', self::report($container)['advised'][FactoryCreatedService::class.'.with_file']['strategy']);
     }
 
     #[Test]
@@ -129,6 +167,26 @@ final class ProxyWeavingPassTest extends TestCase
 
         self::assertSame([FactoryCreatedService::class, 'create'], $container->getDefinition(FactoryCreatedService::class.'.aop_target')->getFactory());
         self::assertSame('interface', self::report($container)['advised'][FactoryCreatedService::class]['strategy']);
+    }
+
+    #[Test]
+    public function taggedServiceWhosePublicMethodsAnInterfaceProxyWouldHideIsSkipped(): void
+    {
+        $container = $this->compiled();
+        $skipped = self::report($container)['skipped'][OrderSubscriber::class] ?? null;
+
+        self::assertSame(OrderSubscriber::class, $container->getDefinition(OrderSubscriber::class)->getClass());
+        self::assertNotNull($skipped);
+        self::assertSame(
+            'an interface proxy would hide method onOrderPlaced(), which tag kernel.event_subscriber may reference',
+            $skipped['reason'],
+        );
+    }
+
+    #[Test]
+    public function untaggedServiceWithNonInterfaceMethodsIsStillInterfaceProxied(): void
+    {
+        self::assertSame('interface', self::report($this->compiled())['advised']['fixture.untagged_subscriber']['strategy']);
     }
 
     #[Test]

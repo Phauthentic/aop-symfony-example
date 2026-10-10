@@ -66,15 +66,18 @@ trait ArgumentList
     }
 
     /**
-     * Can a call to $method possibly be made with an argument count this list accepts?
+     * Can a call to $method possibly be made with an argument count this list accepts? Proxies always forward
+     * every declared parameter (defaults filled in), so only a variadic tail makes the count vary.
      */
     private function arityFeasible(\ReflectionMethod $method): bool
     {
         $wanted = count($this->entries);
-        $max = $method->isVariadic() ? PHP_INT_MAX : $method->getNumberOfParameters();
-        $min = $method->getNumberOfRequiredParameters();
+        $declared = $method->getNumberOfParameters();
+        if ($method->isVariadic()) {
+            return $this->ellipsis || $wanted >= $declared - 1;
+        }
 
-        return $this->ellipsis ? $max >= $wanted : ($min <= $wanted && $wanted <= $max);
+        return $this->ellipsis ? $declared >= $wanted : $declared === $wanted;
     }
 
     /**

@@ -11,6 +11,7 @@ use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\LegacyCountable;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NamedInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -101,5 +102,26 @@ final class InterfaceProxyGeneratorTest extends TestCase
             $expected = ProxyTestHelper::signature(new \ReflectionMethod($interface, $method));
             self::assertSame($expected, ProxyTestHelper::signature(new \ReflectionMethod($proxy, $method)), $method);
         }
+    }
+
+    #[Test]
+    public function keepsReturnTypeWillChangeOfUntypedTargetMethods(): void
+    {
+        $notices = [];
+        set_error_handler(static function (int $level, string $message) use (&$notices): bool {
+            $notices[] = $message;
+
+            return true;
+        });
+        try {
+            $proxyClass = ProxyClassWriter::load((new InterfaceProxyGenerator())->generate(new \ReflectionClass(LegacyCountable::class), ['count']));
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame([], $notices);
+        $proxy = new $proxyClass(new LegacyCountable());
+        self::assertInstanceOf(\Countable::class, $proxy);
+        self::assertCount(3, $proxy);
     }
 }

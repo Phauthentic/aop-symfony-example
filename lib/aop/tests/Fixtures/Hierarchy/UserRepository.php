@@ -38,6 +38,11 @@ class UserRepository extends AbstractRepository
     {
     }
 
+    public function optionalTail(string $name, int $times = 1): string
+    {
+        return str_repeat($name, $times);
+    }
+
     #[Audit('x')]
     public function audited(string $name): string
     {

@@ -55,13 +55,14 @@ final class ProxyCodeBuilder
 
     /**
      * Copies the signature of `$method`: `self`/`parent` resolved to the declaring class FQCN / its parent,
-     * method attributes dropped, only `#[\SensitiveParameter]` kept on parameters, constant defaults made absolute.
+     * method attributes dropped except `#[\ReturnTypeWillChange]` (an untyped implementation of an internal interface
+     * method would otherwise emit a deprecation), only `#[\SensitiveParameter]` kept on parameters, constant defaults made absolute.
      */
     public function signature(\ReflectionMethod $method): Method
     {
         $copy = $this->factory->fromMethodReflection($method);
         $copy->setComment(null)
-            ->setAttributes([])
+            ->setAttributes(self::keepAttribute($copy->getAttributes(), \ReturnTypeWillChange::class))
             ->setFinal(false)
             ->setAbstract(false)
             ->setVisibility($method->isProtected() ? Visibility::Protected : Visibility::Public)
@@ -70,10 +71,7 @@ final class ProxyCodeBuilder
         foreach ($method->getParameters() as $reflection) {
             $parameter = $copy->getParameter($reflection->getName());
             $parameter->setType($this->resolveRelativeTypes($reflection->getType(), $method));
-            $parameter->setAttributes(array_values(array_filter(
-                $parameter->getAttributes(),
-                static fn (\Nette\PhpGenerator\Attribute $a): bool => \SensitiveParameter::class === ltrim($a->getName(), '\\'),
-            )));
+            $parameter->setAttributes(self::keepAttribute($parameter->getAttributes(), \SensitiveParameter::class));
             if ($reflection->isDefaultValueAvailable() && $reflection->isDefaultValueConstant()) {
                 $parameter->setDefaultValue($this->constantDefault($reflection, $method));
             }
@@ -97,8 +95,9 @@ final class ProxyCodeBuilder
      * Turns an expression into the statement(s) that end the method according to its return type.
      *
      * @param bool $earlyExit statement is followed by more code, so `void` must return explicitly
+     * @param bool $wrap      pass the result through the interface proxy's `__aopWrap()`
      */
-    public function returnStatement(\ReflectionMethod $method, string $expression, bool $earlyExit, ?string $substituteTarget = null): string
+    public function returnStatement(\ReflectionMethod $method, string $expression, bool $earlyExit, bool $wrap = false): string
     {
         $type = $method->getReturnType();
         $name = $type instanceof \ReflectionNamedType ? $type->getName() : null;
@@ -106,7 +105,7 @@ final class ProxyCodeBuilder
         return match (true) {
             'never' === $name => $expression.';',
             'void' === $name => $expression.';'.($earlyExit ? "\nreturn;" : ''),
-            null !== $substituteTarget && self::mayReturnSelf($type) => '$result = '.$expression.";\nreturn \$result === ".$substituteTarget.' ? $this : $result;',
+            $wrap => 'return $this->__aopWrap('.$expression.');',
             default => 'return '.$expression.';',
         };
     }
@@ -116,9 +115,14 @@ final class ProxyCodeBuilder
         return (new PsrPrinter())->printFile($file);
     }
 
-    private static function mayReturnSelf(?\ReflectionType $type): bool
+    /**
+     * @param list<\Nette\PhpGenerator\Attribute> $attributes
+     *
+     * @return list<\Nette\PhpGenerator\Attribute>
+     */
+    private static function keepAttribute(array $attributes, string $class): array
     {
-        return null !== $type && 1 === preg_match('/(?<![\w\\\\])(static|self)(?![\w\\\\])/i', (string) $type);
+        return array_values(array_filter($attributes, static fn (\Nette\PhpGenerator\Attribute $a): bool => $class === ltrim($a->getName(), '\\')));
     }
 
     private function resolveRelativeTypes(?\ReflectionType $type, \ReflectionMethod $method): ?string

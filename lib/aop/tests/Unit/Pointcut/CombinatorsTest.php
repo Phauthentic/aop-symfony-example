@@ -181,13 +181,22 @@ final class CombinatorsTest extends TestCase
     }
 
     #[Test]
-    public function bindingsAreMergedForAndOr(): void
+    public function bindingsAreMergedForAndAndOr(): void
     {
         $a = new TargetPointcut(new BindingSpec('a', BindingKind::TARGET, null));
         $b = new TargetPointcut(new BindingSpec('b', BindingKind::TARGET, null));
 
         self::assertSame(['a', 'b'], array_keys((new AndPointcut($a, $b))->bindings()));
-        self::assertSame(['a', 'b'], array_keys((new OrPointcut($a, $b))->bindings()));
+        self::assertSame(['a'], array_keys((new OrPointcut($a, new TargetPointcut(new BindingSpec('a', BindingKind::TARGET, null))))->bindings()));
+    }
+
+    #[Test]
+    public function orRejectsBranchesBindingDifferentNames(): void
+    {
+        $this->expectException(BindingException::class);
+        $this->expectExceptionMessage('every branch of "||" must bind the same names');
+
+        new OrPointcut(new TargetPointcut(new BindingSpec('a', BindingKind::TARGET, null)), new SpyPointcut());
     }
 
     #[Test]

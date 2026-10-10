@@ -11,6 +11,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Log;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\TestKernel;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\VarExporter\LazyObjectInterface;
 
 #[CoversClass(PhauthenticAopBundle::class)]
@@ -104,14 +106,26 @@ final class KernelBootTest extends TestCase
     {
         $service = self::container()->get(LazyService::class);
 
+        // A lazy proxy of the target class, not a ghost of the proxy class: see ProxyWeavingPass.
         self::assertInstanceOf(LazyObjectInterface::class, $service);
-        self::assertInstanceOf(AdvisedInterface::class, $service);
+        self::assertInstanceOf(LazyService::class, $service);
         self::assertFalse($service->isLazyObjectInitialized());
         self::assertSame([], Log::$entries);
 
-        self::assertInstanceOf(LazyService::class, $service);
         self::assertSame('pong', $service->ping());
         self::assertSame(['lazy constructed', 'around>ping', 'ping', 'around<'], Log::$entries);
+        self::assertInstanceOf(AdvisedInterface::class, $service->initializeLazyObject());
+    }
+
+    #[Test]
+    public function eventSubscriberWithANonInterfaceListenerMethodIsNotHiddenBehindAnInterfaceProxy(): void
+    {
+        $dispatcher = self::container()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+
+        $dispatcher->dispatch(new \stdClass(), OrderSubscriber::EVENT);
+
+        self::assertSame(['order placed'], Log::$entries);
     }
 
     #[Test]
@@ -150,6 +164,7 @@ final class KernelBootTest extends TestCase
 
         self::assertSame(0, $exitCode, $stdout);
         self::assertSame([
+            'early' => ['ping' => 'pong', 'greet' => 'Hello early'],
             'greet' => 'Hello x',
             'hot' => 'Hello y',
             'lazy' => true,
@@ -165,6 +180,7 @@ final class KernelBootTest extends TestCase
     {
         $kernel = new TestKernel(self::$baseDir);
         $kernel->boot();
+        Log::reset();
         try {
             $service = $kernel->getContainer()->get('fixture.service');
             self::assertInstanceOf(PlainService::class, $service);

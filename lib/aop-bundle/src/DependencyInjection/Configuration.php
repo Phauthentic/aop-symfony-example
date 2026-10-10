@@ -24,7 +24,7 @@ final class Configuration implements ConfigurationInterface
             ->info('auto: subclass proxies for non-final classes, interface proxies for final classes with interfaces')
             ->values(['auto', 'subclass', 'interface'])
             ->defaultValue('auto');
-        $children->scalarNode('proxy_dir')->cannotBeEmpty()->defaultValue('%kernel.cache_dir%/phauthentic_aop');
+        $children->scalarNode('proxy_dir')->cannotBeEmpty()->defaultValue('%kernel.build_dir%/phauthentic_aop');
 
         $include = $children->arrayNode('include')
             ->info('Type patterns of classes eligible for weaving')

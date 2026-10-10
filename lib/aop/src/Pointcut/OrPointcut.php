@@ -4,10 +4,22 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Pointcut;
 
+use Phauthentic\AOP\Exception\BindingException;
+
 final class OrPointcut implements PointcutInterface
 {
+    /**
+     * @throws BindingException when the branches bind different names: whichever branch matches, every bound advice parameter needs a value
+     */
     public function __construct(private readonly PointcutInterface $left, private readonly PointcutInterface $right)
     {
+        $leftNames = array_keys($left->bindings());
+        $rightNames = array_keys($right->bindings());
+        sort($leftNames);
+        sort($rightNames);
+        if ($leftNames !== $rightNames) {
+            throw new BindingException(sprintf('Pointcut binds [%s] in one branch of "||" and [%s] in the other; every branch of "||" must bind the same names.', implode(', ', $leftNames), implode(', ', $rightNames)));
+        }
     }
 
     public function matchesClass(\ReflectionClass $class, StaticMatchContext $ctx): bool

@@ -206,6 +206,23 @@ final class PointcutExpressionCompilerTest extends TestCase
     }
 
     #[Test]
+    public function orBranchesBindingDifferentNamesAreRejected(): void
+    {
+        $this->expectException(\Phauthentic\AOP\Exception\BindingException::class);
+        $this->expectExceptionMessage('id');
+
+        $this->compile('execution(* '.UserRepository::class.'::find(..)) || args(id)', ['id' => 'int']);
+    }
+
+    #[Test]
+    public function orBranchesBindingTheSameNamesAreAccepted(): void
+    {
+        $p = $this->compile('(args(id) && within(A)) || (args(id, ..) && within(B))', ['id' => 'int']);
+
+        self::assertSame(['id'], array_keys($p->bindings()));
+    }
+
+    #[Test]
     public function bindingInsideNotIsRejected(): void
     {
         $this->expectException(\Phauthentic\AOP\Exception\BindingException::class);

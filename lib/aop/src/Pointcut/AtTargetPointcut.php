@@ -30,6 +30,6 @@ final class AtTargetPointcut implements PointcutInterface
 
     public function matchesRuntime(RuntimeMatchContext $ctx): bool
     {
-        return null === $this->binding || $this->bindAttribute($ctx, new \ReflectionClass($ctx->target));
+        return null === $this->binding || $this->bindAttribute($ctx, $ctx->targetClass());
     }
 }

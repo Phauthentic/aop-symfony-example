@@ -7,6 +7,7 @@ declare(strict_types=1);
  * and prints what happened as JSON.
  */
 
+use Phauthentic\AOP\Symfony\Tests\Fixtures\EarlyBootBundle;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Log;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
@@ -17,6 +18,8 @@ require dirname(__DIR__, 4).'/vendor/autoload.php';
 
 $kernel = new TestKernel((string) ($argv[1] ?? ''));
 $kernel->boot();
+$early = EarlyBootBundle::$results;
+Log::reset();
 $container = $kernel->getContainer();
 
 $plain = $container->get('fixture.service');
@@ -26,7 +29,7 @@ assert($plain instanceof PlainService && $lazy instanceof LazyService);
 $hot = $container->get('fixture.hot');
 assert($hot instanceof PlainService);
 
-$result = ['greet' => $plain->greet('x'), 'hot' => $hot->greet('y'), 'lazy' => $lazy instanceof LazyObjectInterface];
+$result = ['early' => $early, 'greet' => $plain->greet('x'), 'hot' => $hot->greet('y'), 'lazy' => $lazy instanceof LazyObjectInterface];
 $result['ping'] = $lazy->ping();
 $result['log'] = Log::$entries;
 

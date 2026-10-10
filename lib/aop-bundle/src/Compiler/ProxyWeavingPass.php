@@ -19,6 +19,7 @@ use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Proxy\ProxyStrategyResolver;
 use Phauthentic\AOP\Proxy\SubclassProxyGenerator;
 use Phauthentic\AOP\Symfony\Container\AdvisorRegistryFactory;
+use Phauthentic\AOP\Symfony\ProxyAutoloader;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -56,6 +57,7 @@ final class ProxyWeavingPass implements CompilerPassInterface
         $exclude = [...self::patterns($container, self::EXCLUDE), ...array_map(static fn (string $p): TypePattern => new TypePattern($p), self::ALWAYS_EXCLUDED)];
         $runtime = $container->getDefinition(self::RUNTIME);
 
+        $autoloadFile = null;
         /** @var Report $report */
         $report = ['advised' => [], 'skipped' => []];
         foreach ($container->getDefinitions() as $id => $definition) {
@@ -86,21 +88,28 @@ final class ProxyWeavingPass implements CompilerPassInterface
             // Salted with the service id (bean names are registered per proxy class) and the proxy directory, so a
             // build never reuses a proxy class loaded from another cache directory (e.g. during cache:clear).
             $proxy = $generator->generate($target, array_keys($methods), $id."\0".$proxyDir);
-            // The file is what the bundle autoloads at runtime. The dumper needs the class now (lazy services), but
-            // it must not be loaded from that file: the dumper would then inline an include of it into lazy ghost
-            // class files using `$container->targetDir`, which is undefined there (Symfony 7.2 PhpDumper bug).
             $writer->write($proxy);
+            // The dumper needs the class now, but it must not be loaded from its file: the dumper would then inline an
+            // include of that file into lazy proxy class files using `$container->targetDir`, which is undefined there
+            // (Symfony 7.2 PhpDumper). Hence the service includes the autoload file, which never redeclares a class.
             ProxyClassWriter::load($proxy);
+            $autoloadFile ??= self::writeAutoloadFile($proxyDir);
 
             $setRuntime = ['__aopSetRuntime', [new Reference(self::RUNTIME)]];
             if (ProxyStrategy::SUBCLASS === $strategy) {
-                $definition->setClass($proxy->className)->addMethodCall(...$setRuntime);
+                $definition->setClass($proxy->className)->setFile($autoloadFile)->addMethodCall(...$setRuntime);
+                if ($definition->isLazy() && !$definition->hasTag('proxy')) {
+                    // A lazy ghost would extend the proxy class before the service includes the autoload file; a
+                    // lazy proxy of the target class creates the proxied instance in the service factory instead.
+                    $definition->addTag('proxy', ['interface' => $class]);
+                }
             } else {
                 // DecoratorServicePass already ran, so decorate by hand.
                 $proxyDefinition = (new Definition($proxy->className, [new Reference($id.'.aop_target')]))
                     ->setPublic($definition->isPublic())
                     ->setShared($definition->isShared())
                     ->setTags($definition->getTags())
+                    ->setFile($autoloadFile)
                     ->addMethodCall(...$setRuntime);
                 $container->setDefinition($id.'.aop_target', $definition->setPublic(false)->setTags([]));
                 $container->setDefinition($id, $proxyDefinition);
@@ -128,14 +137,61 @@ final class ProxyWeavingPass implements CompilerPassInterface
         if (null === $strategy) {
             return [null, 'the class is final and implements no interface'];
         }
-        if (ProxyStrategy::SUBCLASS === $strategy && null !== $definition->getFactory()) {
-            // A factory creates the instance, so its class cannot be swapped; wrap it instead.
-            return [] !== $target->getInterfaceNames()
-                ? [ProxyStrategy::INTERFACE, null]
-                : [null, 'the service is created by a factory, which needs an interface proxy, but the class implements no interface'];
+        if (ProxyStrategy::SUBCLASS === $strategy && (null !== $definition->getFactory() || null !== $definition->getFile())) {
+            // A factory creates the instance, or the definition's file slot is taken, so the class cannot be swapped; wrap it instead.
+            if ([] === $target->getInterfaceNames()) {
+                return [null, sprintf('the service %s, which needs an interface proxy, but the class implements no interface', null !== $definition->getFactory() ? 'is created by a factory' : 'includes a file')];
+            }
+            $strategy = ProxyStrategy::INTERFACE;
         }
 
-        return [$strategy, null];
+        return ProxyStrategy::INTERFACE === $strategy ? self::unlessMethodsWouldBeHidden($target, $definition) : [$strategy, null];
+    }
+
+    /**
+     * Tags are processed before weaving and may reference any public method of the service (event listeners and
+     * subscribers, controllers, message handlers, ...), which an interface proxy only has if an interface declares it.
+     *
+     * @param \ReflectionClass<object> $target
+     *
+     * @return array{0: ProxyStrategy|null, 1: string|null}
+     */
+    private static function unlessMethodsWouldBeHidden(\ReflectionClass $target, Definition $definition): array
+    {
+        $tags = array_keys($definition->getTags());
+        if ([] === $tags) {
+            return [ProxyStrategy::INTERFACE, null];
+        }
+
+        $declared = [];
+        foreach ($target->getInterfaces() as $interface) {
+            foreach ($interface->getMethods() as $method) {
+                $declared[strtolower($method->getName())] = true;
+            }
+        }
+        $hidden = [];
+        foreach ($target->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (!$method->isStatic() && !$method->isConstructor() && !$method->isDestructor() && !isset($declared[strtolower($method->getName())])) {
+                $hidden[] = $method->getName().'()';
+            }
+        }
+
+        return [] === $hidden
+            ? [ProxyStrategy::INTERFACE, null]
+            : [null, sprintf('an interface proxy would hide method %s, which tag %s may reference', implode(', ', $hidden), implode(', ', $tags))];
+    }
+
+    private static function writeAutoloadFile(string $dir): string
+    {
+        $file = $dir.'/'.ProxyAutoloader::FILE;
+        // Written atomically: a concurrent process may include it at any time.
+        $tmp = @tempnam($dir, ProxyAutoloader::FILE);
+        if (false === $tmp || false === @file_put_contents($tmp, ProxyAutoloader::fileContents()) || !@rename($tmp, $file)) {
+            throw new ProxyGenerationException(sprintf('Cannot write the proxy autoload file "%s".', $file));
+        }
+        @chmod($file, 0666 & ~umask());
+
+        return $file;
     }
 
     /**

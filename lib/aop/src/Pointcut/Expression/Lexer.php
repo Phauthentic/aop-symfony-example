@@ -77,13 +77,13 @@ final class Lexer
     }
 
     /**
-     * Service ids contain dots and dashes, so bean() takes one raw token.
+     * Service ids contain dots and dashes (or are FQCNs when autowired), so bean() takes one raw token.
      *
      * @param list<Token> $tokens
      */
     private function readBeanPattern(string $expression, int $i, array &$tokens): int
     {
-        if (1 !== preg_match('/\G\s*([A-Za-z0-9_.*\-]+)/', $expression, $m, PREG_OFFSET_CAPTURE, $i)) {
+        if (1 !== preg_match('/\G\s*([A-Za-z0-9_.*\\\\\-]+)/', $expression, $m, PREG_OFFSET_CAPTURE, $i)) {
             return $i;
         }
         $tokens[] = new Token(TokenType::Word, $m[1][0], $m[1][1]);

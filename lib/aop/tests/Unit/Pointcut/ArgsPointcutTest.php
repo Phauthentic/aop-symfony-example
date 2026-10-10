@@ -76,8 +76,12 @@ final class ArgsPointcutTest extends TestCase
         yield 'ellipsis alone' => ['args(..)', 'twoStrings', true];
         yield 'at least ok' => ['args(string, ..)', 'twoStrings', true];
         yield 'at least too many' => ['args(*, *, *, ..)', 'twoStrings', false];
-        yield 'optional param may be omitted' => ['args(int, string)', 'intThenAny', true];
-        yield 'optional param may be passed' => ['args(int, string, array)', 'intThenAny', true];
+        // Proxies always forward every declared parameter (defaults filled in), so optional ones count.
+        yield 'optional param is always forwarded' => ['args(int, string)', 'intThenAny', false];
+        yield 'all params including optional' => ['args(int, string, array)', 'intThenAny', true];
+        yield 'single wildcard vs optional tail' => ['args(*)', 'optionalTail', false];
+        yield 'ellipsis covers optional tail' => ['args(int, ..)', 'intThenAny', true];
+        yield 'ellipsis over declared count' => ['args(*, *, *, *, ..)', 'intThenAny', false];
     }
 
     #[Test]
@@ -85,6 +89,14 @@ final class ArgsPointcutTest extends TestCase
     public function staticPartPrunesByArity(string $expression, string $method, bool $expected): void
     {
         self::assertSame($expected, $this->static($this->pc($expression), UserRepository::class, $method));
+    }
+
+    #[Test]
+    public function bindingMustCoverOptionalParametersToo(): void
+    {
+        self::assertFalse($this->static($this->pc('args(n)', ['n' => 'string']), UserRepository::class, 'optionalTail'));
+        self::assertTrue($this->static($this->pc('args(n, *)', ['n' => 'string']), UserRepository::class, 'optionalTail'));
+        self::assertTrue($this->static($this->pc('args(n, ..)', ['n' => 'string']), UserRepository::class, 'optionalTail'));
     }
 
     #[Test]

@@ -76,7 +76,7 @@ bin/console app:aop-demo   # runs the demo scenarios
   Inject the interface.
   Self-invocation is not advised.
 
-Both are written to `var/cache/<env>/phauthentic_aop/` and never touch `src/`.
+Both are written to the kernel build directory (`var/cache/<env>/phauthentic_aop/` by default) and never touch `src/`.
 
 ## Limitations
 

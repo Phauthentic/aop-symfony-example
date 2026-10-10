@@ -26,10 +26,10 @@ reference := name '()'                 # named pointcut in the same aspect
 | `target(Type\|name)` | The target is an instance of the type | the target |
 | `args(Type, name, ..)` | Runtime argument types, by position | arguments |
 | `@annotation(Attr\|name)` | The method carries the PHP attribute | the attribute instance |
-| `@within(Attr\|name)` | The declaring class carries the attribute | the attribute instance |
+| `@within(Attr\|name)` | The target class or the class declaring the method carries the attribute | the attribute instance |
 | `@target(Attr\|name)` | The target class carries the attribute | the attribute instance |
 | `@args(Attr\|name)` | The runtime class of an argument carries the attribute | the attribute instance |
-| `bean(service.id)` | Symfony service id, `*` wildcard | nothing |
+| `bean(service.id)` | Symfony service id (dotted or an autowired FQCN such as `App\Service\Mailer`), `*` wildcard | nothing |
 
 Unsupported AspectJ designators (`call`, `cflow`, `get`, `set`, `withincode`, `if`) raise an `UnsupportedPointcutDesignatorException`.
 Other syntax errors raise a `PointcutSyntaxException` with the position.
@@ -70,6 +70,11 @@ final class CommonPointcuts
 An identifier inside `args`, `this`, `target`, `@annotation`, `@within`, `@target` or `@args` is a binding when it equals the name of an advice parameter.
 Otherwise it is read as a type pattern.
 The parameter type restricts the match at runtime.
+A nullable parameter type (`?Retry $retry`) restricts the match like its non-nullable form.
+Every branch of `||` must bind the same names, otherwise compiling the pointcut raises a `BindingException`.
+
+`args` sees every declared parameter: proxies forward optional parameters with their default values.
+So `args(name)` does not match `greet(string $name, int $times = 1)`; use `args(name, ..)` or `args(name, *)`.
 
 ```php
 #[Before('execution(* App\Service\StringService::greet(..)) && args(name, ..)')]

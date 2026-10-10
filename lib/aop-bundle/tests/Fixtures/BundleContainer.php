@@ -18,7 +18,10 @@ final class BundleContainer
     public static function create(array $config = []): ContainerBuilder
     {
         $container = new ContainerBuilder();
-        $container->setParameter('kernel.cache_dir', TestKernel::newBaseDir());
+        $base = TestKernel::newBaseDir();
+        // Distinct, as in deployments with a read-only build directory: proxies belong next to the container.
+        $container->setParameter('kernel.cache_dir', $base.'/cache');
+        $container->setParameter('kernel.build_dir', $base.'/build');
         $bundle = new PhauthenticAopBundle();
         $extension = $bundle->getContainerExtension();
         \assert(null !== $extension);

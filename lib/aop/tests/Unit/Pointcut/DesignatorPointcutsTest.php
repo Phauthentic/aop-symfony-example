@@ -10,6 +10,7 @@ use Phauthentic\AOP\Pointcut\AtWithinPointcut;
 use Phauthentic\AOP\Pointcut\BeanPointcut;
 use Phauthentic\AOP\Pointcut\BindingKind;
 use Phauthentic\AOP\Pointcut\BindingSpec;
+use Phauthentic\AOP\Pointcut\Expression\PointcutExpressionCompiler;
 use Phauthentic\AOP\Pointcut\Pattern\NamePattern;
 use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
 use Phauthentic\AOP\Pointcut\PointcutInterface;
@@ -291,5 +292,18 @@ final class DesignatorPointcutsTest extends TestCase
         self::assertFalse($this->static($pointcut, Plain::class, bean: null));
         self::assertFalse($pointcut->isRuntime());
         self::assertSame([], $pointcut->bindings());
+    }
+
+    #[Test]
+    public function beanMatchesAutowiredFqcnServiceIds(): void
+    {
+        $compiler = new PointcutExpressionCompiler();
+        $exact = $compiler->compile('bean(App\Service\StringService)');
+        $glob = $compiler->compile('bean(App\Service\*)');
+
+        self::assertTrue($this->static($exact, Plain::class, bean: 'App\Service\StringService'));
+        self::assertFalse($this->static($exact, Plain::class, bean: 'App\Service\OtherService'));
+        self::assertTrue($this->static($glob, Plain::class, bean: 'App\Service\OtherService'));
+        self::assertFalse($this->static($glob, Plain::class, bean: 'App\Controller\HomeController'));
     }
 }

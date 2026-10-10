@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Pointcut;
 
+use Phauthentic\AOP\Proxy\AdvisedInterface;
+
 final class RuntimeMatchContext
 {
     /**
@@ -22,6 +24,25 @@ final class RuntimeMatchContext
         public readonly array $args,
         public readonly ?StaticMatchContext $staticContext = null,
     ) {
+    }
+
+    /**
+     * The advised class: the weave-time target class, else the target's class with generated proxy classes
+     * (and subclasses of them, e.g. lazy ghosts) skipped, since attributes are not inherited.
+     *
+     * @return \ReflectionClass<object>
+     */
+    public function targetClass(): \ReflectionClass
+    {
+        if (null !== $this->staticContext) {
+            return $this->staticContext->targetClass;
+        }
+        $class = $this->target::class;
+        while (is_a($class, AdvisedInterface::class, true) && false !== ($parent = get_parent_class($class))) {
+            $class = $parent;
+        }
+
+        return new \ReflectionClass($class);
     }
 
     /**

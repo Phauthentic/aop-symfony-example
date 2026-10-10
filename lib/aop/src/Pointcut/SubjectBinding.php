@@ -26,8 +26,9 @@ trait SubjectBinding
             return;
         }
         $this->binding = $subject;
-        if (null !== $subject->typeRestriction && !in_array($subject->typeRestriction, ['mixed', 'object'], true)) {
-            $this->subjectType = new TypePattern($subject->typeRestriction, false, true);
+        $restriction = $subject->classRestriction();
+        if (null !== $restriction) {
+            $this->subjectType = new TypePattern($restriction, false, true);
         }
     }
 

@@ -13,12 +13,18 @@ use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Service\Greeter;
+use Phauthentic\AOP\Tests\Fixtures\Targets\Builder;
+use Phauthentic\AOP\Tests\Fixtures\Targets\BuilderInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\CountingConstructor;
 use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\FinalWithoutInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\InterfaceTypedTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\Narrowed;
+use Phauthentic\AOP\Tests\Fixtures\Targets\NarrowedInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\ReaderRepo;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RepoInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SignatureShapes;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -186,5 +192,70 @@ final class ProxyFactoryTest extends TestCase
         $factory = new ProxyFactory(new AdvisorRegistry([]), new ArrayAspectInstanceResolver([]));
 
         self::assertSame(CountingConstructor::class, $factory->createProxyClass(CountingConstructor::class));
+    }
+
+    #[Test]
+    public function interfaceProxyTakesSignaturesFromTheTargetWhenInterfacesDeclareDifferentReturnTypes(): void
+    {
+        $proxy = $this->factory()->createProxy(new ReaderRepo());
+
+        self::assertInstanceOf(RepoInterface::class, $proxy);
+        self::assertInstanceOf(\stdClass::class, $proxy->find());
+        self::assertSame(['around>find', 'find', 'around<'], Log::$entries);
+    }
+
+    #[Test]
+    public function interfaceProxyHandlesAChildInterfaceNarrowingAReturnTypeListedAfterItsParent(): void
+    {
+        $proxy = $this->factory()->createProxy(new Narrowed());
+
+        self::assertInstanceOf(NarrowedInterface::class, $proxy);
+        self::assertInstanceOf(\stdClass::class, $proxy->get());
+        self::assertSame(['around>get', 'get', 'around<'], Log::$entries);
+    }
+
+    #[Test]
+    public function interfaceProxyWrapsTargetInstancesReturnedByWithers(): void
+    {
+        $proxy = $this->factory()->createProxy(new Builder());
+        self::assertInstanceOf(BuilderInterface::class, $proxy);
+
+        $copy = $proxy->with('a');
+
+        self::assertInstanceOf(BuilderInterface::class, $copy);
+        self::assertInstanceOf(AdvisedInterface::class, $copy);
+        self::assertNotSame($proxy, $copy);
+        self::assertSame('a', $copy->value());
+        self::assertSame('', $proxy->value(), 'the original stays untouched');
+
+        Log::reset();
+        $copy->with('b');
+        self::assertSame(['around>with', 'with b', 'around<'], Log::$entries, 'the wrapped copy is advised');
+
+        $selfCopy = $proxy->copy();
+        self::assertInstanceOf(AdvisedInterface::class, $selfCopy, 'a `self` return type on the target is served as `static`');
+        self::assertNotSame($proxy, $selfCopy);
+    }
+
+    #[Test]
+    public function interfaceProxyReturnsItselfWhenTheTargetReturnsThis(): void
+    {
+        $proxy = $this->factory()->createProxy(new Builder());
+        self::assertInstanceOf(BuilderInterface::class, $proxy);
+
+        self::assertSame($proxy, $proxy->same());
+        Log::reset();
+        self::assertSame($proxy, $proxy->add('a')->add('b'), 'an interface return type returning $this yields the proxy');
+        self::assertSame(['around>add', 'add a', 'around<', 'around>add', 'add b', 'around<'], Log::$entries, 'chained calls are advised');
+        self::assertSame('a,b', $proxy->value());
+    }
+
+    #[Test]
+    public function interfaceProxyLeavesUnrelatedObjectResultsUntouched(): void
+    {
+        $proxy = $this->factory()->createProxy(new Builder());
+        self::assertInstanceOf(BuilderInterface::class, $proxy);
+
+        self::assertSame(\stdClass::class, $proxy->other()::class);
     }
 }

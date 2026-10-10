@@ -14,7 +14,7 @@ final class RuntimeEvaluation
     public static function matches(PointcutInterface $pointcut, RuntimeMatchContext $ctx): bool
     {
         // ponytail: without a weave-time context bean()/INTERFACE-strategy information is lost; C6 passes the real one.
-        $static = $ctx->staticContext ?? new StaticMatchContext(new \ReflectionClass($ctx->target));
+        $static = $ctx->staticContext ?? new StaticMatchContext($ctx->targetClass());
 
         return $pointcut->matchesClass($static->targetClass, $static)
             && $pointcut->matchesMethod($ctx->method, $static)

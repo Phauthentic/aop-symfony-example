@@ -140,6 +140,7 @@ final class ParserTest extends TestCase
         yield '@target' => ['@target(attr)', new AtTargetNode(new BindingCandidateNode('attr'))];
         yield 'bean' => ['bean(app.*_service)', new BeanNode('app.*_service')];
         yield 'bean dashes' => ['bean( my-bean )', new BeanNode('my-bean')];
+        yield 'bean FQCN id' => ['bean(App\Service\StringService)', new BeanNode('App\Service\StringService')];
         yield 'this type' => ['this(App\Contract\Foo)', new ThisNode(self::t('App\Contract\Foo'))];
         yield 'this binding' => ['this(proxy)', new ThisNode(new BindingCandidateNode('proxy'))];
         yield 'target binding' => ['target(t)', new TargetNode(new BindingCandidateNode('t'))];

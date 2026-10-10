@@ -12,6 +12,7 @@ use Phauthentic\AOP\Proxy\SubclassProxyGenerator;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Targets\AttributedTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\CountingConstructor;
+use Phauthentic\AOP\Tests\Fixtures\Targets\LegacyCountable;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfReferencing;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SelfReferencingBase;
@@ -214,5 +215,24 @@ final class SubclassProxyGeneratorTest extends TestCase
         self::assertSame($first->className, $second->className);
         self::assertSame($first->code, $second->code);
         self::assertTrue(class_exists($second->className, false));
+    }
+
+    #[Test]
+    public function keepsReturnTypeWillChangeOfUntypedMethods(): void
+    {
+        $notices = [];
+        set_error_handler(static function (int $level, string $message) use (&$notices): bool {
+            $notices[] = $message;
+
+            return true;
+        });
+        try {
+            $proxyClass = $this->load(LegacyCountable::class, ['count']);
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame([], $notices);
+        self::assertCount(3, new $proxyClass());
     }
 }
