@@ -12,4 +12,9 @@ use Phauthentic\AOP\Runtime\AopRuntime;
 interface AdvisedInterface
 {
     public function __aopSetRuntime(AopRuntime $runtime): void;
+
+    /**
+     * The advised instance: the proxy itself for subclass proxies, the wrapped instance for interface proxies.
+     */
+    public function __aopGetTarget(): object;
 }

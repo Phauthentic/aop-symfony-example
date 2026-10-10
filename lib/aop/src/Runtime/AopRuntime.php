@@ -9,9 +9,10 @@ use Phauthentic\AOP\Interceptor\MethodInterceptorInterface;
 use Phauthentic\AOP\JoinPoint\MethodInvocation;
 use Phauthentic\AOP\JoinPoint\MethodSignature;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
+use Phauthentic\AOP\Proxy\ProxyStrategy;
 
 /**
- * Entry point called by generated proxies. Interceptor chains are built lazily and cached per class and method.
+ * Entry point called by generated proxies. Interceptor chains are built lazily and cached per class, method and proxy strategy.
  */
 final class AopRuntime
 {
@@ -40,7 +41,9 @@ final class AopRuntime
      */
     public function invoke(object $proxy, object $target, string $class, string $method, array $args, \Closure $targetInvoker): mixed
     {
-        [$interceptors, $signature] = $this->chains[$class.'::'.$method] ??= $this->build($class, $method);
+        // A subclass proxy is an instance of the target class, an interface proxy is not; `this()` matching depends on it.
+        $strategy = $proxy instanceof $class ? ProxyStrategy::SUBCLASS : ProxyStrategy::INTERFACE;
+        [$interceptors, $signature] = $this->chains[$class.'::'.$method.'@'.$strategy->value] ??= $this->build($class, $method, $strategy);
 
         return (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
     }
@@ -50,13 +53,13 @@ final class AopRuntime
      *
      * @return array{0: list<MethodInterceptorInterface>, 1: MethodSignature}
      */
-    private function build(string $class, string $method): array
+    private function build(string $class, string $method, ProxyStrategy $strategy): array
     {
         $rc = new \ReflectionClass($class);
         $rm = $rc->getMethod($method);
 
         return [
-            $this->factory->chain($rc, $rm, new StaticMatchContext($rc, $this->beanNames[$class] ?? null)),
+            $this->factory->chain($rc, $rm, new StaticMatchContext($rc, $this->beanNames[$class] ?? null, $strategy)),
             MethodSignature::fromReflection($rm),
         ];
     }
