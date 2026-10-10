@@ -1,3 +1,3 @@
-# Symfony AOP Proxy System
+# symfony-aop
 
-This project demonstrates how to create proxy classes in Symfony using a custom proxy generator and Aspect-Oriented Programming (AOP) to inject before/after method execution hooks.
+Rewrite in progress, see docs/

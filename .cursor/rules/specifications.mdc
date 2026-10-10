@@ -4,18 +4,4 @@ globs:
 alwaysApply: true
 ---
 
-## AOP Implementation
-
-- In `./src/AOP` only files that belong to the AOP library must be placed.
-- For classes implementing an interface, a proxy extending the original class can be used.
-- For final classes create a proxy that is a copy of the original class with the injected weaving code.
-- For non-final classes that do not implement an interface, extending the class will be the proxy 
-strategy to use.
-- Generated proxies must not be part of `./src` but should be stored in `./var/proxy-classes`
-- When the proxy class is called, pointcuts matching the class and method(s) must be executed
-- The proxy implementation must be generic and not be hardcoded to any classes.
-
-## Symfony Implementation
-
-- When the Symfony kernel boots, all classes using the #[Aspect] attribute should be read and processed by the AOP library, wiring the pointcuts
-- When the Symfony kernel or container boots, the proxies should be generated and replace the original instances in the container transparently, so the proxies will be used and get injected instead of the original classes
+The specification source is `docs/`.
