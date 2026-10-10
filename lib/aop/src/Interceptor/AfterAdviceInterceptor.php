@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Phauthentic\AOP\Interceptor;
+
+use Phauthentic\AOP\Aspect\AspectInstanceResolverInterface;
+use Phauthentic\AOP\Binding\BindingPlan;
+use Phauthentic\AOP\JoinPoint\MethodInvocation;
+
+final class AfterAdviceInterceptor implements MethodInterceptorInterface
+{
+    private readonly AdviceInvoker $advice;
+
+    /**
+     * @param class-string $aspectClass
+     */
+    public function __construct(AspectInstanceResolverInterface $aspects, string $aspectClass, string $method, BindingPlan $plan)
+    {
+        $this->advice = new AdviceInvoker($aspects, $aspectClass, $method, $plan);
+    }
+
+    public function invoke(MethodInvocation $invocation): mixed
+    {
+        try {
+            return $invocation->proceed();
+        } finally {
+            $this->advice->call($invocation);
+        }
+    }
+}
