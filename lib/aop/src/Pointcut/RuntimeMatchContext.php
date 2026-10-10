@@ -1,0 +1,40 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Phauthentic\AOP\Pointcut;
+
+final class RuntimeMatchContext
+{
+    /**
+     * @var array<string, mixed>
+     */
+    private array $bound = [];
+
+    /**
+     * @param array<int|string, mixed> $args
+     */
+    public function __construct(
+        public readonly object $proxy,
+        public readonly object $target,
+        public readonly \ReflectionMethod $method,
+        public readonly array $args,
+    ) {
+    }
+
+    /**
+     * Called by pointcuts that bind values (args, this, target, @annotation, ...).
+     */
+    public function bind(string $name, mixed $value): void
+    {
+        $this->bound[$name] = $value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function bound(): array
+    {
+        return $this->bound;
+    }
+}
