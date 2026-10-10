@@ -11,13 +11,13 @@ This page covers the two strategies, how one is chosen, which classes and method
 |---|---|---|
 | Spring equivalent | CGLIB proxy | JDK dynamic proxy |
 | Generated class | `extends Target`, overrides the advised methods only | `implements` every interface of the target, delegates every interface method to a wrapped instance |
-| Works for | Non-final classes | Any class that implements at least one interface, including final ones |
+| Works for | Non-final classes (final ones with the bundle's opt-in `strip_final`) | Any class that implements at least one interface, including final ones |
 | Inject as | The class or any interface | The interface only; the proxy is **not** an instance of the target class |
 | `$this` inside the target | The proxy, so self-invocation is advised | The target, so self-invocation is not advised |
 | `getThis()` / `getTarget()` | Both the proxy | The proxy / the wrapped instance |
 | Constructor | Runs once, untouched, when the proxy is constructed | Untouched; the proxy's own constructor takes the target instance |
 | Protected methods | Advised | Never (not declared by an interface) |
-| Final methods | Skipped | Advised if an interface declares them |
+| Final methods | Skipped (advised with the bundle's opt-in `strip_final`) | Advised if an interface declares them |
 | Non-interface public methods | Still callable | Do not exist on the proxy |
 | Target returns `$this` | The proxy (it is `$this`) | The proxy, via `__aopWrap()` |
 | Target returns another instance of its class | That instance, advised only if it is itself a proxy | A new proxy around it sharing the same runtime, via `__aopWrap()` |
@@ -26,9 +26,12 @@ This page covers the two strategies, how one is chosen, which classes and method
 
 Introduced interfaces come from `#[DeclareParents]`; see [Introductions](introductions.md).
 
+The Symfony bundle can subclass final classes when `strip_final` is enabled: it loads a copy of the class file without `final` (`Proxy\FinalStripper`) and passes `allowFinal: true` to `ProxyStrategyResolver::resolve()` and `MethodEligibility::reasonForExclusion()`.
+It is off by default and risky; see [strip_final](symfony.md#strip_final-opt-in-risky).
+
 ## Auto-selection
 
-`Proxy\ProxyStrategyResolver::resolve(\ReflectionClass $target, ?ProxyStrategy $configured): ?ProxyStrategy`:
+`Proxy\ProxyStrategyResolver::resolve(\ReflectionClass $target, ?ProxyStrategy $configured, bool $allowFinal = false): ?ProxyStrategy`:
 
 1. `#[Proxyable(ProxyStrategy::X)]` on the target class wins over everything.
 2. Otherwise the configured strategy applies (`proxy_strategy` in the bundle, the constructor argument of `ProxyFactory`).

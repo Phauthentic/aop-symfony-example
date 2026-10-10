@@ -17,7 +17,7 @@ final class PhauthenticAopExtension extends Extension
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
-        /** @var array{enabled: bool, proxy_strategy: string, proxy_dir: string, include: list<string>, exclude: list<string>} $config */
+        /** @var array{enabled: bool, proxy_strategy: string, proxy_dir: string, include: list<string>, exclude: list<string>, strip_final: bool, strip_final_include: list<string>} $config */
         $config = $this->processConfiguration(new Configuration(), $configs);
         if (!$config['enabled']) {
             return;
@@ -28,5 +28,7 @@ final class PhauthenticAopExtension extends Extension
         $container->setParameter(ProxyWeavingPass::PROXY_STRATEGY, $config['proxy_strategy']);
         $container->setParameter(ProxyWeavingPass::INCLUDE, $config['include']);
         $container->setParameter(ProxyWeavingPass::EXCLUDE, $config['exclude']);
+        $container->setParameter(ProxyWeavingPass::STRIP_FINAL, $config['strip_final']);
+        $container->setParameter(ProxyWeavingPass::STRIP_FINAL_INCLUDE, $config['strip_final_include']);
     }
 }

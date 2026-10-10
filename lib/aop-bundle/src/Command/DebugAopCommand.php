@@ -14,7 +14,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class DebugAopCommand extends Command
 {
     /**
-     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>} $report
+     * @param array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>, finalStripped?: bool, warning?: string}>, skipped: array<string, array{class: string, reason: string}>} $report
      */
     public function __construct(private readonly array $report)
     {
@@ -45,7 +45,7 @@ final class DebugAopCommand extends Command
             foreach ($service['advisors'] as $method => $advisors) {
                 $runtime = self::runtimeCell($advisors);
                 $hasRuntime = $hasRuntime || '-' !== $runtime;
-                $rows[] = [$id, $service['strategy'], $method, implode("\n", array_column($advisors, 'advisor')), $runtime];
+                $rows[] = [$id, $service['strategy'].(isset($service['finalStripped']) ? ' (final stripped)' : ''), $method, implode("\n", array_column($advisors, 'advisor')), $runtime];
             }
         }
         if ([] === $rows) {
@@ -78,6 +78,17 @@ final class DebugAopCommand extends Command
             $io->section('Self-invocations that bypass advice');
             $io->listing($self);
             $io->text('Inside an interface-proxied target $this is the plain object. Call AopContext::currentProxy()->method() instead.');
+        }
+
+        $warnings = [];
+        foreach ($this->report['advised'] as $id => $service) {
+            if (isset($service['warning'])) {
+                $warnings[] = sprintf('%s: %s', $id, $service['warning']);
+            }
+        }
+        if ([] !== $warnings) {
+            $io->section('Warnings');
+            $io->listing($warnings);
         }
 
         $io->section('Skipped services');

@@ -34,7 +34,10 @@ final class TestKernel extends Kernel
 
     public const SCRATCH_DIR = '/tmp/claude-1000/-home-florian-projects-symfony-aop/b141f6da-9d6f-43c9-a85c-7dec6c378374/scratchpad/aop-bundle-tests';
 
-    public function __construct(private readonly string $baseDir)
+    /**
+     * @param array<string, mixed> $aopConfig merged into the phauthentic_aop configuration
+     */
+    public function __construct(private readonly string $baseDir, private readonly array $aopConfig = [])
     {
         parent::__construct('test', true);
     }
@@ -69,7 +72,7 @@ final class TestKernel extends Kernel
     private function configureContainer(ContainerConfigurator $container): void
     {
         $container->extension('framework', ['secret' => 'test', 'test' => true]);
-        $container->extension('phauthentic_aop', [
+        $container->extension('phauthentic_aop', $this->aopConfig + [
             'include' => ['Phauthentic\AOP\Symfony\Tests\Fixtures\**'],
             'exclude' => ['Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\**'],
         ]);

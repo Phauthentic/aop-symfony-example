@@ -13,6 +13,7 @@ use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CountedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
@@ -248,5 +249,56 @@ final class KernelBootTest extends TestCase
         } finally {
             $kernel->shutdown();
         }
+    }
+
+    /**
+     * Compiles a strip_final kernel in this process (which has the final class loaded, as autowiring loads it anyway)
+     * and returns its base directory.
+     */
+    private static function stripFinalKernelDir(): string
+    {
+        $baseDir = TestKernel::newBaseDir();
+        $kernel = new TestKernel($baseDir, ['strip_final' => true]);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        return $baseDir;
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private static function bootStripFinalKernelInFreshProcess(string $baseDir, string ...$args): array
+    {
+        $command = sprintf('%s %s %s 2>&1', escapeshellarg(PHP_BINARY), escapeshellarg(dirname(__DIR__).'/Fixtures/boot_strip_final.php'), implode(' ', array_map(escapeshellarg(...), [$baseDir, ...$args])));
+        exec($command, $output, $exitCode);
+        $stdout = implode("\n", $output);
+        self::assertSame(0, $exitCode, $stdout);
+        $result = json_decode($stdout, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($result);
+
+        /* @var array<string, mixed> $result */
+        return $result;
+    }
+
+    #[Test]
+    public function stripFinalAdvisesAFinalClassInAProcessThatLoadsItAfterBoot(): void
+    {
+        self::assertSame([
+            'advised' => true,
+            'final' => false,
+            'run' => 'run',
+            'stop' => 'stop',
+            'log' => ['around>run', 'run', 'around<', 'around>stop', 'around<'],
+        ], self::bootStripFinalKernelInFreshProcess(self::stripFinalKernelDir()));
+    }
+
+    #[Test]
+    public function stripFinalFailsClearlyWhenTheFinalClassWasLoadedBeforeBoot(): void
+    {
+        $result = self::bootStripFinalKernelInFreshProcess(self::stripFinalKernelDir(), '--load-early');
+
+        self::assertIsString($result['error'] ?? null);
+        self::assertStringContainsString('needs "'.FinalNoInterfaceService::class.'" to be loaded from its copy without "final", but the original was loaded first', $result['error']);
     }
 }

@@ -90,4 +90,39 @@ final class DebugAopCommandTest extends TestCase
         self::assertStringContainsString('AopContext::currentProxy()', $output);
         self::assertStringNotContainsString(FinalService::class.' '.FinalService::class.'::', $output);
     }
+
+    #[Test]
+    public function marksStrippedFinalClassesAndShowsTheirWarnings(): void
+    {
+        $kernel = new TestKernel(TestKernel::newBaseDir(), ['strip_final' => true]);
+        try {
+            $tester = new CommandTester((new Application($kernel))->find('debug:aop'));
+
+            self::assertSame(Command::SUCCESS, $tester->execute([]));
+            $output = $tester->getDisplay();
+        } finally {
+            $kernel->shutdown();
+        }
+
+        self::assertMatchesRegularExpression('/'.preg_quote(FinalNoInterfaceService::class, '/').'\s+subclass \(final stripped\)\s+run/', $output);
+        self::assertStringContainsString('Warnings', $output);
+        self::assertStringContainsString(FinalNoInterfaceService::class.': '.FinalNoInterfaceService::class.' was loaded before weaving', $output);
+        self::assertStringNotContainsString('final and implements no interface', $output);
+    }
+
+    #[Test]
+    public function showsNoStrippingMarkerByDefault(): void
+    {
+        $kernel = new TestKernel(TestKernel::newBaseDir());
+        try {
+            $tester = new CommandTester((new Application($kernel))->find('debug:aop'));
+            $tester->execute([]);
+            $output = $tester->getDisplay();
+        } finally {
+            $kernel->shutdown();
+        }
+
+        self::assertStringNotContainsString('final stripped', $output);
+        self::assertStringNotContainsString('Warnings', $output);
+    }
 }

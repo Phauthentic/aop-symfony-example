@@ -18,6 +18,7 @@ Register `Phauthentic\AOP\Symfony\PhauthenticAopBundle` in `config/bundles.php` 
 ```yaml
 phauthentic_aop:
     include: ['App\**']
+    # strip_final: false   # opt-in and risky: subclass proxies for final classes, see docs/symfony.md
 ```
 
 ## Quick start

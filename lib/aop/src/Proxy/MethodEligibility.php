@@ -11,9 +11,10 @@ namespace Phauthentic\AOP\Proxy;
 final class MethodEligibility
 {
     /**
-     * @param \ReflectionClass<covariant object>|null $target the proxied class when it differs from the declaring class
+     * @param \ReflectionClass<covariant object>|null $target     the proxied class when it differs from the declaring class
+     * @param bool                                    $allowFinal the proxy extends a copy of the class with `final` removed
      */
-    public static function reasonForExclusion(\ReflectionMethod $method, ProxyStrategy $strategy, ?\ReflectionClass $target = null): ?string
+    public static function reasonForExclusion(\ReflectionMethod $method, ProxyStrategy $strategy, ?\ReflectionClass $target = null, bool $allowFinal = false): ?string
     {
         $reason = match (true) {
             $method->isPrivate() => 'private methods cannot be overridden',
@@ -21,7 +22,7 @@ final class MethodEligibility
             $method->isAbstract() && !self::isIntroduced($method) => 'abstract methods have no implementation to advise',
             str_starts_with($method->getName(), '__') => 'constructors, destructors and magic methods are never advised',
             $method->returnsReference() => 'methods returning by reference are not supported',
-            ProxyStrategy::SUBCLASS === $strategy && $method->isFinal() => 'final methods cannot be overridden by a subclass proxy',
+            ProxyStrategy::SUBCLASS === $strategy && $method->isFinal() && !$allowFinal => 'final methods cannot be overridden by a subclass proxy',
             default => null,
         };
         if (null !== $reason) {

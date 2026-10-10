@@ -69,4 +69,15 @@ final class ProxyStrategyResolverTest extends TestCase
 
         (new ProxyStrategyResolver())->resolve(new \ReflectionClass(FinalWithoutInterface::class), ProxyStrategy::INTERFACE);
     }
+
+    #[Test]
+    public function allowFinalResolvesFinalClassesLikeNonFinalOnes(): void
+    {
+        $resolver = new ProxyStrategyResolver();
+
+        self::assertSame(ProxyStrategy::SUBCLASS, $resolver->resolve(new \ReflectionClass(FinalWithoutInterface::class), null, allowFinal: true));
+        self::assertSame(ProxyStrategy::SUBCLASS, $resolver->resolve(new \ReflectionClass(FinalWithInterface::class), null, allowFinal: true));
+        self::assertSame(ProxyStrategy::SUBCLASS, $resolver->resolve(new \ReflectionClass(FinalWithInterface::class), ProxyStrategy::SUBCLASS, allowFinal: true));
+        self::assertSame(ProxyStrategy::INTERFACE, $resolver->resolve(new \ReflectionClass(FinalWithInterface::class), ProxyStrategy::INTERFACE, allowFinal: true));
+    }
 }

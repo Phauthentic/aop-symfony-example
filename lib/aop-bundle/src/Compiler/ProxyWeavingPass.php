@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Symfony\Compiler;
 
+use Composer\Autoload\ClassLoader;
 use Phauthentic\AOP\Advisor\Advisor;
 use Phauthentic\AOP\Advisor\AdvisorChainFactory;
 use Phauthentic\AOP\Advisor\IntroductionAdvisor;
 use Phauthentic\AOP\Aspect\ArrayAspectInstanceResolver;
 use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Attribute\Aspect;
+use Phauthentic\AOP\Attribute\Proxyable;
 use Phauthentic\AOP\Binding\ParameterBinder;
 use Phauthentic\AOP\Exception\ProxyGenerationException;
 use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
+use Phauthentic\AOP\Proxy\FinalStripper;
 use Phauthentic\AOP\Proxy\InterfaceProxyGenerator;
 use Phauthentic\AOP\Proxy\MethodEligibility;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
@@ -22,6 +25,7 @@ use Phauthentic\AOP\Proxy\ProxyStrategyResolver;
 use Phauthentic\AOP\Proxy\SubclassProxyGenerator;
 use Phauthentic\AOP\Symfony\Container\AdvisorRegistryFactory;
 use Phauthentic\AOP\Symfony\ProxyAutoloader;
+use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -31,7 +35,7 @@ use Symfony\Component\DependencyInjection\Reference;
 /**
  * Replaces advised services by generated proxies and records what it did in the weaving report.
  *
- * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>}>, skipped: array<string, array{class: string, reason: string}>}
+ * @phpstan-type Report array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>, finalStripped?: bool, warning?: string}>, skipped: array<string, array{class: string, reason: string}>}
  */
 final class ProxyWeavingPass implements CompilerPassInterface
 {
@@ -39,6 +43,8 @@ final class ProxyWeavingPass implements CompilerPassInterface
     public const PROXY_STRATEGY = 'phauthentic_aop.proxy_strategy';
     public const INCLUDE = 'phauthentic_aop.include';
     public const EXCLUDE = 'phauthentic_aop.exclude';
+    public const STRIP_FINAL = 'phauthentic_aop.strip_final';
+    public const STRIP_FINAL_INCLUDE = 'phauthentic_aop.strip_final_include';
     public const REPORT = 'phauthentic_aop.weaving_report';
 
     private const RUNTIME = 'phauthentic_aop.runtime';
@@ -59,8 +65,11 @@ final class ProxyWeavingPass implements CompilerPassInterface
         $include = self::patterns($container, self::INCLUDE);
         $exclude = [...self::patterns($container, self::EXCLUDE), ...array_map(static fn (string $p): TypePattern => new TypePattern($p), self::ALWAYS_EXCLUDED)];
         $runtime = $container->getDefinition(self::RUNTIME);
+        $stripInclude = true === $container->getParameter(self::STRIP_FINAL) ? self::patterns($container, self::STRIP_FINAL_INCLUDE) : [];
 
         $autoloadFile = null;
+        /** @var array<string, array{file: string, source: string, proxies: list<string>}> $unfinalized */
+        $unfinalized = [];
         /** @var Report $report */
         $report = ['advised' => [], 'skipped' => []];
         foreach ($container->getDefinitions() as $id => $definition) {
@@ -71,15 +80,24 @@ final class ProxyWeavingPass implements CompilerPassInterface
             if (!\is_string($class) || !self::isWeavable($class, $include, $exclude)) {
                 continue;
             }
+            $class = ltrim($class, '\\');
+            // Lazy services are never stripped: the lazy proxy of the target class would be dumped against what this
+            // process has loaded.
+            $strippable = !$definition->isLazy() && self::matchesAny($class, $stripInclude);
+            if ($strippable) {
+                self::unfinalizeBeforeLoading($class, $proxyDir);
+            }
             // Reflect the target only: this tracks its file for container freshness.
             $target = $container->getReflectionClass($class, false);
             if (null === $target || [] !== $target->getAttributes(Aspect::class) || null !== MethodEligibility::isClassProxyable($target)) {
                 continue;
             }
 
-            [$strategy, $reason] = self::strategy($target, $configured, $definition);
+            $strippable = $strippable && [] === $target->getAttributes(Proxyable::class);
+            [$strategy, $reason] = self::strategy($target, $configured, $definition, $strippable);
+            $stripping = $strippable && ProxyStrategy::SUBCLASS === $strategy;
             $introductions = array_map(static fn (IntroductionAdvisor $i): string => $i->defaultImpl, $registry->introductionsFor($target));
-            $advised = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id, array_keys($introductions));
+            $advised = self::advisedMethods($chains, $target, $strategy ?? ProxyStrategy::SUBCLASS, $id, array_keys($introductions), $stripping);
             if ([] === $advised && [] === $introductions) {
                 continue;
             }
@@ -88,15 +106,34 @@ final class ProxyWeavingPass implements CompilerPassInterface
                 continue;
             }
 
+            // The class this process loaded from an unfinalized copy, or the final original.
+            $originalFile = ProxyAutoloader::originalFile($class);
+            $stripped = $stripping && (null !== $originalFile || self::hasFinal($target, array_keys($advised)));
+            if ($stripped) {
+                $source = $originalFile ?? (string) $target->getFileName();
+                $unfinalized[$class] ??= ['file' => basename(self::writeUnfinalizedCopy($proxyDir, $class, $source)), 'source' => $source, 'proxies' => []];
+                // The reflection of a copy tracks the copy; the original is what the user edits.
+                $container->addResource(new FileResource($source));
+                // Preloading the proxy preloads the final original, before any autoloader could load the copy.
+                $definition->addTag('container.no_preload');
+            }
+
             $generator = ProxyStrategy::SUBCLASS === $strategy ? new SubclassProxyGenerator() : new InterfaceProxyGenerator();
             // Salted with the service id (bean names are registered per proxy class) and the proxy directory, so a
             // build never reuses a proxy class loaded from another cache directory (e.g. during cache:clear).
             $proxy = $generator->generate($target, array_keys($advised), $id."\0".$proxyDir, $introductions);
             $writer->write($proxy);
+            if ($stripped) {
+                $unfinalized[$class]['proxies'][] = $proxy->className;
+            }
             // The dumper needs the class now, but it must not be loaded from its file: the dumper would then inline an
             // include of that file into lazy proxy class files using `$container->targetDir`, which is undefined there
             // (Symfony 7.2 PhpDumper). Hence the service includes the autoload file, which never redeclares a class.
-            ProxyClassWriter::load($proxy);
+            // A proxy extending a final class that is loaded already cannot be declared here at all (not lazy, so the
+            // dumper does without it).
+            if (!$stripped || null !== $originalFile) {
+                ProxyClassWriter::load($proxy);
+            }
             $autoloadFile ??= self::writeAutoloadFile($proxyDir);
 
             $setRuntime = ['__aopSetRuntime', [new Reference(self::RUNTIME)]];
@@ -126,8 +163,15 @@ final class ProxyWeavingPass implements CompilerPassInterface
             if (ProxyStrategy::INTERFACE === $strategy) {
                 $report['advised'][$id]['selfInvocations'] = SelfInvocationScanner::scan($target, array_keys($advised));
             }
+            if ($stripped) {
+                $report['advised'][$id]['finalStripped'] = null !== $originalFile;
+                if (null === $originalFile) {
+                    $report['advised'][$id]['warning'] = sprintf('%s was loaded before weaving, so the process that compiled the container cannot use this service; other processes can as long as they load the class only after the kernel booted.', $class);
+                }
+            }
         }
 
+        self::writeUnfinalizedMap($proxyDir, $unfinalized);
         $container->setParameter(self::REPORT, $report);
         $container->getDefinition('phauthentic_aop.command.debug')->setArgument(0, $report);
     }
@@ -137,10 +181,10 @@ final class ProxyWeavingPass implements CompilerPassInterface
      *
      * @return array{0: ProxyStrategy|null, 1: string|null} strategy, or null and the reason
      */
-    private static function strategy(\ReflectionClass $target, ?ProxyStrategy $configured, Definition $definition): array
+    private static function strategy(\ReflectionClass $target, ?ProxyStrategy $configured, Definition $definition, bool $allowFinal): array
     {
         try {
-            $strategy = (new ProxyStrategyResolver())->resolve($target, $configured);
+            $strategy = (new ProxyStrategyResolver())->resolve($target, $configured, $allowFinal);
         } catch (ProxyGenerationException $e) {
             return [null, $e->getMessage()];
         }
@@ -193,11 +237,21 @@ final class ProxyWeavingPass implements CompilerPassInterface
 
     private static function writeAutoloadFile(string $dir): string
     {
-        $file = $dir.'/'.ProxyAutoloader::FILE;
-        // Written atomically: a concurrent process may include it at any time.
-        $tmp = @tempnam($dir, ProxyAutoloader::FILE);
-        if (false === $tmp || false === @file_put_contents($tmp, ProxyAutoloader::fileContents()) || !@rename($tmp, $file)) {
-            throw new ProxyGenerationException(sprintf('Cannot write the proxy autoload file "%s".', $file));
+        return self::writeAtomically($dir.'/'.ProxyAutoloader::FILE, ProxyAutoloader::fileContents());
+    }
+
+    /**
+     * Writes atomically: a concurrent process may include the file at any time.
+     */
+    private static function writeAtomically(string $file, string $contents): string
+    {
+        $dir = \dirname($file);
+        if (!is_dir($dir) && !@mkdir($dir, 0777, true) && !is_dir($dir)) {
+            throw new ProxyGenerationException(sprintf('Cannot create directory "%s".', $dir));
+        }
+        $tmp = @tempnam($dir, basename($file));
+        if (false === $tmp || false === @file_put_contents($tmp, $contents) || !@rename($tmp, $file)) {
+            throw new ProxyGenerationException(sprintf('Cannot write "%s".', $file));
         }
         @chmod($file, 0666 & ~umask());
 
@@ -205,17 +259,96 @@ final class ProxyWeavingPass implements CompilerPassInterface
     }
 
     /**
+     * Writes a copy of the class file without `final` and returns its path. The name hashes the source, so an edited
+     * class never reuses a stale copy.
+     */
+    private static function writeUnfinalizedCopy(string $proxyDir, string $class, string $sourceFile): string
+    {
+        $source = @file_get_contents($sourceFile);
+        if (false === $source) {
+            throw new ProxyGenerationException(sprintf('Cannot read "%s" to remove "final" from class "%s".', $sourceFile, $class));
+        }
+
+        return self::writeAtomically(sprintf('%s/%s/%s.php', $proxyDir, ProxyAutoloader::UNFINALIZED_DIR, hash('xxh128', $class."\0".$source)), FinalStripper::strip($source));
+    }
+
+    /**
+     * @param array<string, array{file: string, source: string, proxies: list<string>}> $unfinalized
+     */
+    private static function writeUnfinalizedMap(string $proxyDir, array $unfinalized): void
+    {
+        $file = $proxyDir.'/'.ProxyAutoloader::UNFINALIZED_DIR.'/'.ProxyAutoloader::UNFINALIZED_MAP;
+        if ([] !== $unfinalized) {
+            self::writeAtomically($file, "<?php\n\n// Generated by phauthentic/aop-bundle: classes loaded without \"final\" (strip_final).\nreturn ".var_export($unfinalized, true).";\n");
+        } elseif (is_file($file)) {
+            @unlink($file);
+        }
+    }
+
+    /**
+     * A class not loaded yet is loaded from a copy without `final` from now on, so this process can declare its
+     * subclass proxy. Whether it is woven at all is only known after reflecting it; if it is not, only this process
+     * sees it without `final`.
+     * ponytail: a class with `#[Proxyable]` (checked by text) is never copied, so the attribute keeps its meaning.
+     */
+    private static function unfinalizeBeforeLoading(string $class, string $proxyDir): void
+    {
+        if (class_exists($class, false) || null === $file = self::classFile($class)) {
+            return;
+        }
+        $source = (string) @file_get_contents($file);
+        if (str_contains($source, 'Proxyable') || FinalStripper::strip($source) === $source) {
+            return;
+        }
+        ProxyAutoloader::unfinalize($class, self::writeUnfinalizedCopy($proxyDir, $class, $file), $file);
+    }
+
+    private static function classFile(string $class): ?string
+    {
+        foreach (ClassLoader::getRegisteredLoaders() as $loader) {
+            if (false !== $file = $loader->findFile($class)) {
+                return realpath($file) ?: $file;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the class or one of the advised methods is final; only those make the copy without `final` necessary.
+     *
+     * @param \ReflectionClass<object> $target
+     * @param list<string>             $advised
+     */
+    private static function hasFinal(\ReflectionClass $target, array $advised): bool
+    {
+        if ($target->isFinal()) {
+            return true;
+        }
+        foreach ($advised as $name) {
+            if ($target->hasMethod($name) && $target->getMethod($name)->isFinal()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param \ReflectionClass<object> $target
      * @param list<class-string>       $introduced
+     * @param bool                     $allowFinal final methods of the target's own file are advisable (strip_final)
      *
      * @return array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>> method name => matched advisors
      */
-    private static function advisedMethods(AdvisorChainFactory $chains, \ReflectionClass $target, ProxyStrategy $strategy, string $id, array $introduced): array
+    private static function advisedMethods(AdvisorChainFactory $chains, \ReflectionClass $target, ProxyStrategy $strategy, string $id, array $introduced, bool $allowFinal): array
     {
         $context = new StaticMatchContext($target, $id, $strategy, $introduced);
         $methods = [];
         foreach ([...$target->getMethods(), ...array_values(MethodEligibility::introducedMethods($target, $introduced))] as $method) {
-            if (null !== MethodEligibility::reasonForExclusion($method, $strategy, $target)) {
+            // Only the target's file is copied without `final`, not those of its parents and traits.
+            $allowFinalHere = $allowFinal && $method->getFileName() === $target->getFileName();
+            if (null !== MethodEligibility::reasonForExclusion($method, $strategy, $target, $allowFinalHere)) {
                 continue;
             }
             $advisors = $chains->matchedAdvisors($target, $method, $context);
@@ -255,6 +388,20 @@ final class ProxyWeavingPass implements CompilerPassInterface
         preg_match_all('/(?<![\w@])(@?args|this|target|@target|@within)\s*\(/', $expression, $matches);
 
         return array_values(array_unique($matches[1]));
+    }
+
+    /**
+     * @param list<TypePattern> $patterns
+     */
+    private static function matchesAny(string $class, array $patterns): bool
+    {
+        foreach ($patterns as $pattern) {
+            if ($pattern->matches($class)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -45,6 +45,12 @@ final class MethodEligibilityTest extends TestCase
     }
 
     #[Test]
+    public function finalMethodsAreEligibleWhenFinalIsAllowed(): void
+    {
+        self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(MixedMethods::class, 'locked'), ProxyStrategy::SUBCLASS, allowFinal: true));
+    }
+
+    #[Test]
     public function excludesAbstractMethods(): void
     {
         $reason = MethodEligibility::reasonForExclusion(new \ReflectionMethod(AbstractTarget::class, 'todo'), ProxyStrategy::SUBCLASS);
