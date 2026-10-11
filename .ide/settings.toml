@@ -1,0 +1,45 @@
+version = 1
+
+[[run_config]]
+id = 'php-lib\aop\src\Advisor\AdvisorRegistry.php'
+name = 'lib\aop\src\Advisor\AdvisorRegistry.php'
+program = "php"
+args = ['lib\aop\src\Advisor\AdvisorRegistry.php']
+cwd = "$PROJECT_DIR"
+env = []
+toolchain = "php"
+target = 'lib\aop\src\Advisor\AdvisorRegistry.php'
+temporary = true
+
+[[run_config]]
+id = "php-lib/aop/src/Advisor/AdvisorRegistry.php"
+name = "lib/aop/src/Advisor/AdvisorRegistry.php"
+program = "php"
+args = ["lib/aop/src/Advisor/AdvisorRegistry.php"]
+cwd = "$PROJECT_DIR"
+env = []
+toolchain = "php"
+target = "lib/aop/src/Advisor/AdvisorRegistry.php"
+temporary = true
+
+[[run_config]]
+id = "php-lib/aop/src/Runtime/AopContext.php"
+name = "lib/aop/src/Runtime/AopContext.php"
+program = "php"
+args = ["lib/aop/src/Runtime/AopContext.php"]
+cwd = "$PROJECT_DIR"
+env = []
+toolchain = "php"
+target = "lib/aop/src/Runtime/AopContext.php"
+temporary = true
+
+[[run_config]]
+id = "php-lib/aop/src/Proxy/ProxyCodeBuilder.php"
+name = "lib/aop/src/Proxy/ProxyCodeBuilder.php"
+program = "php"
+args = ["lib/aop/src/Proxy/ProxyCodeBuilder.php"]
+cwd = "$PROJECT_DIR"
+env = []
+toolchain = "php"
+target = "lib/aop/src/Proxy/ProxyCodeBuilder.php"
+temporary = true

@@ -9,20 +9,12 @@
     <server name="SYMFONY_PHPUNIT_REMOVE" value=""/>
   </php>
   <testsuites>
-    <testsuite name="core-unit">
-      <directory>lib/aop/tests</directory>
-    </testsuite>
-    <testsuite name="bundle-integration">
-      <directory>lib/aop-bundle/tests</directory>
-    </testsuite>
-    <testsuite name="app-e2e">
+    <testsuite name="tests">
       <directory>tests</directory>
     </testsuite>
   </testsuites>
   <source restrictNotices="true" restrictWarnings="true" ignoreIndirectDeprecations="true">
     <include>
-      <directory>lib/aop/src</directory>
-      <directory>lib/aop-bundle/src</directory>
       <directory>src</directory>
     </include>
   </source>
