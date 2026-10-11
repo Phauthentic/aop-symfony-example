@@ -1,9 +1,5 @@
 parameters:
     level: max
     paths:
-        - lib/aop/src
-        - lib/aop-bundle/src
-        - lib/aop/tests
-        - lib/aop-bundle/tests
         - src
         - tests

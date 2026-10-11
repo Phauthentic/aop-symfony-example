@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4c3f8a27a694d2916dc4a4f5d6c6e4ca",
+    "content-hash": "361374685f58d90b13a2dfdb76a13a58",
     "packages": [
         {
             "name": "nette/php-generator",
@@ -173,16 +173,28 @@
         },
         {
             "name": "phauthentic/aop",
-            "version": "dev-feat/limitations",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:Phauthentic/aop.git",
+                "reference": "507188c5082de29b6144dba029e522cba5b16cf4"
+            },
             "dist": {
-                "type": "path",
-                "url": "lib/aop",
-                "reference": "46f3a0f22935707ad86e1ddfa346b6be924b26b1"
+                "type": "zip",
+                "url": "https://api.github.com/repos/Phauthentic/aop/zipball/507188c5082de29b6144dba029e522cba5b16cf4",
+                "reference": "507188c5082de29b6144dba029e522cba5b16cf4",
+                "shasum": ""
             },
             "require": {
                 "nette/php-generator": "^4.2",
                 "php": ">=8.3"
             },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.95",
+                "phpstan/phpstan": "^2.3",
+                "phpunit/phpunit": "^12.0"
+            },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -194,31 +206,77 @@
                     "Phauthentic\\AOP\\Tests\\": "tests/"
                 }
             },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ],
+                "stan": [
+                    "phpstan analyse --memory-limit=1G"
+                ],
+                "cs": [
+                    "php-cs-fixer fix --dry-run --diff"
+                ],
+                "cs-fix": [
+                    "php-cs-fixer fix"
+                ],
+                "coverage": [
+                    "@putenv XDEBUG_MODE=coverage",
+                    "phpunit --coverage-clover=var/coverage/clover.xml",
+                    "php tools/coverage-check.php var/coverage/clover.xml 85"
+                ],
+                "check": [
+                    "@cs",
+                    "@stan",
+                    "@coverage"
+                ]
+            },
             "license": [
                 "MIT"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "authors": [
+                {
+                    "name": "Florian Krämer"
+                }
+            ],
+            "description": "Aspect-oriented programming for PHP 8.3+: pointcut expressions, advice, introductions and generated proxies, modelled on Spring AOP.",
+            "support": {
+                "source": "https://github.com/Phauthentic/aop/tree/main",
+                "issues": "https://github.com/Phauthentic/aop/issues"
+            },
+            "time": "2026-10-11T07:58:19+00:00"
         },
         {
-            "name": "phauthentic/aop-bundle",
-            "version": "dev-feat/limitations",
+            "name": "phauthentic/symfony-aop",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:Phauthentic/symfony-aop.git",
+                "reference": "83fcbbb9c95fc255163e47aa688aa6fe939ec8ef"
+            },
             "dist": {
-                "type": "path",
-                "url": "lib/aop-bundle",
-                "reference": "7f20fc207d0a18bb0675b129bb569ae3fe11e05d"
+                "type": "zip",
+                "url": "https://api.github.com/repos/Phauthentic/symfony-aop/zipball/83fcbbb9c95fc255163e47aa688aa6fe939ec8ef",
+                "reference": "83fcbbb9c95fc255163e47aa688aa6fe939ec8ef",
+                "shasum": ""
             },
             "require": {
                 "composer-runtime-api": "^2.0",
-                "phauthentic/aop": "@dev",
+                "phauthentic/aop": "dev-main",
                 "php": ">=8.3",
                 "symfony/config": "^7.2",
                 "symfony/console": "^7.2",
                 "symfony/dependency-injection": "^7.2",
                 "symfony/http-kernel": "^7.2"
             },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.95",
+                "phpstan/phpstan": "^2.3",
+                "phpunit/phpunit": "^12.0",
+                "symfony/event-dispatcher": "^7.2",
+                "symfony/framework-bundle": "^7.2",
+                "symfony/var-exporter": "^7.2"
+            },
+            "default-branch": true,
             "type": "symfony-bundle",
             "autoload": {
                 "psr-4": {
@@ -230,13 +288,44 @@
                     "Phauthentic\\AOP\\Symfony\\Tests\\": "tests/"
                 }
             },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ],
+                "stan": [
+                    "phpstan analyse --memory-limit=1G"
+                ],
+                "cs": [
+                    "php-cs-fixer fix --dry-run --diff"
+                ],
+                "cs-fix": [
+                    "php-cs-fixer fix"
+                ],
+                "coverage": [
+                    "@putenv XDEBUG_MODE=coverage",
+                    "phpunit --coverage-clover=var/coverage/clover.xml",
+                    "php tools/coverage-check.php var/coverage/clover.xml 85"
+                ],
+                "check": [
+                    "@cs",
+                    "@stan",
+                    "@coverage"
+                ]
+            },
             "license": [
                 "MIT"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "authors": [
+                {
+                    "name": "Florian Krämer"
+                }
+            ],
+            "description": "Symfony bundle for phauthentic/aop: tagged aspects, compile-time proxy weaving and a debug:aop command.",
+            "support": {
+                "source": "https://github.com/Phauthentic/symfony-aop/tree/main",
+                "issues": "https://github.com/Phauthentic/symfony-aop/issues"
+            },
+            "time": "2026-10-11T08:00:23+00:00"
         },
         {
             "name": "psr/cache",
@@ -5744,10 +5833,10 @@
         }
     ],
     "aliases": [],
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "stability-flags": {
         "phauthentic/aop": 20,
-        "phauthentic/aop-bundle": 20
+        "phauthentic/symfony-aop": 20
     },
     "prefer-stable": true,
     "prefer-lowest": false,
