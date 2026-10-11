@@ -1,6 +1,7 @@
 {
+    "name": "phauthentic/aop-symfony-example"
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
