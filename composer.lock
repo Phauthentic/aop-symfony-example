@@ -177,12 +177,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Phauthentic/aop.git",
-                "reference": "d74e9bfcff6d6079bf61d8b8793dfacd2a6bc2a9"
+                "reference": "6ae8be7def3a9933cfbc8f8e1f893acc46aa7f93"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Phauthentic/aop/zipball/d74e9bfcff6d6079bf61d8b8793dfacd2a6bc2a9",
-                "reference": "d74e9bfcff6d6079bf61d8b8793dfacd2a6bc2a9",
+                "url": "https://api.github.com/repos/Phauthentic/aop/zipball/6ae8be7def3a9933cfbc8f8e1f893acc46aa7f93",
+                "reference": "6ae8be7def3a9933cfbc8f8e1f893acc46aa7f93",
                 "shasum": ""
             },
             "require": {
@@ -243,7 +243,7 @@
                 "source": "https://github.com/Phauthentic/aop/tree/main",
                 "issues": "https://github.com/Phauthentic/aop/issues"
             },
-            "time": "2026-10-11T08:24:05+00:00"
+            "time": "2026-10-11T08:30:00+00:00"
         },
         {
             "name": "phauthentic/symfony-aop",
@@ -251,12 +251,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Phauthentic/aop-symfony.git",
-                "reference": "7da41dd695d0292008467c665db9fb2f7267724a"
+                "reference": "accd01f5a3f756f7301118fc1ea5c31c14b41926"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Phauthentic/aop-symfony/zipball/7da41dd695d0292008467c665db9fb2f7267724a",
-                "reference": "7da41dd695d0292008467c665db9fb2f7267724a",
+                "url": "https://api.github.com/repos/Phauthentic/aop-symfony/zipball/accd01f5a3f756f7301118fc1ea5c31c14b41926",
+                "reference": "accd01f5a3f756f7301118fc1ea5c31c14b41926",
                 "shasum": ""
             },
             "require": {
@@ -325,7 +325,7 @@
                 "source": "https://github.com/Phauthentic/aop-symfony/tree/main",
                 "issues": "https://github.com/Phauthentic/aop-symfony/issues"
             },
-            "time": "2026-10-11T08:23:44+00:00"
+            "time": "2026-10-11T08:28:21+00:00"
         },
         {
             "name": "psr/cache",
