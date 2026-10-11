@@ -38,6 +38,12 @@ public function around(ProceedingJoinPointInterface $pjp): mixed
 The replaced arguments are what inner advice sees in `getArgs()` and what reaches the target.
 Not calling `proceed()` skips the target and all inner advice.
 
+By-reference parameters stay connected to the caller's variables.
+`proceed()` without arguments lets the target write to them directly.
+`proceed($args)` writes back after the rest of the chain returns: the caller's variable receives what the target left in the replaced slot, or the replacement value if the target did not change it.
+If the chain throws, the caller's variables keep their previous values.
+`getArgs()` and `args()` bindings hand advice copies of the values, so assigning to them never reaches the caller.
+
 The return type of an `#[Around]` method is yours to choose; `mixed` is the safe default.
 The runtime does not coerce the value to the target's return type.
 When the final result of the chain does not satisfy the declared return type, `AopRuntime` throws an `AdviceReturnException` naming the Around advice, the returned type and the method's declared type.
@@ -95,7 +101,7 @@ public function before(string $name): void
 
 | Method | Returns |
 |---|---|
-| `getArgs(): array` | The current arguments, positional, with variadic keys preserved. After `proceed($args)` inner advice sees the replaced arguments. |
+| `getArgs(): array` | The current arguments, positional, with variadic keys preserved. After `proceed($args)` inner advice sees the replaced arguments. By-reference arguments are returned as values. |
 | `getThis(): object` | The proxy the call was made on. |
 | `getTarget(): object` | The advised instance: the proxy itself for subclass proxies, the wrapped object for interface proxies. |
 | `getSignature(): MethodSignature` | `className`, `methodName`, `method` (a `\ReflectionMethod`), `toShortString()` (`UserService::findUser(..)`), `toLongString()` (`App\Service\UserService::findUser(int, ...string)`). |
@@ -104,6 +110,8 @@ public function before(string $name): void
 `ProceedingJoinPointInterface` adds `proceed(?array $args = null): mixed`.
 
 `MethodSignature::className` is the class that declares the method, which may be a parent of the target class.
+
+Outside advice, a target can reach its own proxy with `AopContext::currentProxy()`; see [Proxies](proxies.md#self-invocation-and-aopcontext).
 
 ## Ordering
 
@@ -206,14 +214,55 @@ See [Examples](examples.md) for the resulting trace.
 ## Aspect instances
 
 Aspects are plain objects; the library never instantiates them itself.
-`AspectInstanceResolverInterface::get(string $aspectClass): object` supplies them.
+`AspectInstanceResolverInterface::get(string $aspectClass, ?object $scope = null): object` supplies them.
 
 - With the bundle, `ContainerAspectInstanceResolver` pulls the aspect from a service locator on first use.
   Aspects stay private services, may depend on anything, and a cycle between an aspect and a service it advises is fine because the aspect is resolved only when the first advised call happens.
 - With `ProxyFactory::fromAspects()`, `ArrayAspectInstanceResolver` holds the instances you pass.
   It also accepts closures that create the aspect lazily.
 
-`AdviceInvoker` caches the instance after the first resolution, so an aspect is resolved once per interceptor.
+By default an aspect is a singleton: one instance serves every advised object.
+`AdviceInvoker` caches that instance after the first resolution, so a singleton aspect is resolved once per interceptor.
+
+### Scopes
+
+`#[Aspect(scope: ...)]` takes an `AspectScope` that mirrors the Spring instantiation models.
+
+| Scope | Spring | One aspect instance per |
+|---|---|---|
+| `AspectScope::SINGLETON` (default) | `issingleton()` | container |
+| `AspectScope::PER_TARGET` | `pertarget` | target object |
+| `AspectScope::PER_THIS` | `perthis` | proxy object |
+
+```php
+use Phauthentic\AOP\Aspect\AspectScope;
+use Phauthentic\AOP\Attribute\Aspect;
+
+#[Aspect(scope: AspectScope::PER_TARGET)]
+final class CallCounter
+{
+    private int $calls = 0;
+
+    #[Before('execution(* App\Service\*Service::*(..))')]
+    public function count(): void
+    {
+        ++$this->calls;
+    }
+}
+```
+
+The resolver receives the target (`pertarget`) or the proxy (`perthis`) as `$scope`.
+With the subclass strategy these are the same object.
+With the interface strategy they differ: the proxy wraps the target.
+Two proxies around one target therefore share a `pertarget` instance and get separate `perthis` instances.
+
+Scoped instances are created on the first advised call on that object.
+Both resolvers keep them in a `WeakMap` keyed by the scope object.
+The instance is released when the target or proxy is garbage-collected.
+This holds even when the aspect instance references its scope object, for example through a stored join point.
+The garbage collector can only break such a cycle through a `WeakMap` from PHP 8.3 on; on PHP 8.2 the entry would never be collected, which is why the library requires PHP 8.3.
+A closure registered with `ArrayAspectInstanceResolver` runs once per scope object, so register a closure rather than a ready instance for a scoped aspect.
+Introductions declared with `#[DeclareParents]` are not affected by the scope.
 
 ## Validation summary
 

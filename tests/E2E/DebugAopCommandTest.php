@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\E2E;
 
+use App\Contract\Auditable;
+use App\Contract\AuditTrail;
 use App\Service\OrderService;
 use App\Service\StringService;
 use PHPUnit\Framework\Attributes\Test;
@@ -27,7 +29,11 @@ final class DebugAopCommandTest extends KernelTestCase
         foreach (['reverse', 'upper', 'greet', 'flaky'] as $method) {
             self::assertStringContainsString($method, $output);
         }
-        foreach (['LoggingAspect::before', 'ValidationAspect::before', 'RetryAspect::around', 'CachingAspect::around'] as $advisor) {
+        self::assertStringContainsString('Introduced interfaces', $output);
+        foreach ([StringService::class, OrderService::class] as $service) {
+            self::assertMatchesRegularExpression('/'.preg_quote($service, '/').'\s+'.preg_quote(Auditable::class, '/').'\s+'.preg_quote(AuditTrail::class, '/').'/', $output);
+        }
+        foreach (['AuditIntroductionAspect::record', 'LoggingAspect::before', 'ValidationAspect::before', 'RetryAspect::around', 'CachingAspect::around'] as $advisor) {
             self::assertStringContainsString($advisor, $output);
         }
     }

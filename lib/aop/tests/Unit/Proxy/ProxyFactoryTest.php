@@ -11,8 +11,20 @@ use Phauthentic\AOP\Exception\ProxyGenerationException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyFactory;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionOnlyAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\RefAroundAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\RefBeforeAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\TargetsAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\TrackedIntroductionAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\WrongReturnAspect;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\BareTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\FinalWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ReadonlyWorkTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Tracked;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Log;
 use Phauthentic\AOP\Tests\Fixtures\Service\Greeter;
 use Phauthentic\AOP\Tests\Fixtures\Targets\Builder;
@@ -24,12 +36,18 @@ use Phauthentic\AOP\Tests\Fixtures\Targets\GreetingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\InterfaceTypedTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\Narrowed;
 use Phauthentic\AOP\Tests\Fixtures\Targets\NarrowedInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\NewStaticTarget;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReaderRepo;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ReadonlyTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTarget;
+use Phauthentic\AOP\Tests\Fixtures\Targets\RefTargetInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\RepoInterface;
+use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingFinal;
+use Phauthentic\AOP\Tests\Fixtures\Targets\SelfCallingInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\ShoutInterface;
 use Phauthentic\AOP\Tests\Fixtures\Targets\SignatureShapes;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -133,6 +151,16 @@ final class ProxyFactoryTest extends TestCase
     }
 
     #[Test]
+    public function interfaceProxyTargetAdvisesItsSelfCallThroughAopContext(): void
+    {
+        $proxy = $this->factory()->createProxy(new SelfCallingFinal());
+
+        self::assertInstanceOf(SelfCallingInterface::class, $proxy);
+        self::assertSame('outer>inner', $proxy->outer());
+        self::assertSame(['around>outer', 'around>inner', 'around<', 'around<'], Log::$entries);
+    }
+
+    #[Test]
     public function proxyableAttributeSelectsInterfaceStrategy(): void
     {
         $proxy = $this->factory(ProxyStrategy::SUBCLASS)->createProxy(new InterfaceTypedTarget());
@@ -166,6 +194,107 @@ final class ProxyFactoryTest extends TestCase
         } finally {
             exec('rm -rf '.escapeshellarg($dir));
         }
+    }
+
+    #[Test]
+    public function newStaticInsideTheTargetReturnsAnAdvisedInstance(): void
+    {
+        $proxy = $this->factory()->newInstance(NewStaticTarget::class);
+
+        $created = $proxy->withNewStatic();
+        self::assertInstanceOf(AdvisedInterface::class, $created);
+        self::assertNotSame($proxy, $created);
+
+        Log::reset();
+        self::assertSame('new-static', $created->name());
+        self::assertSame(['around>name', 'around<'], Log::$entries);
+    }
+
+    #[Test]
+    public function runtimeIsSharedByAllInstancesOfAProxyClass(): void
+    {
+        $factory = $this->factory();
+        $class = $factory->createProxyClass(NewStaticTarget::class);
+        $first = new $class();
+        $second = new $class();
+        self::assertInstanceOf(NewStaticTarget::class, $second);
+        self::assertInstanceOf(AdvisedInterface::class, $first);
+        $first->__aopSetRuntime($factory->runtime());
+
+        self::assertSame('new-static', $second->name());
+        self::assertSame(['around>name', 'around<'], Log::$entries);
+    }
+
+    /**
+     * @param class-string $class
+     * @param list<mixed>  $arguments
+     */
+    #[Test]
+    #[DataProvider('runtimeIsolationTargets')]
+    public function eachFactoryKeepsItsOwnAspectsOnInstancesOfTheSameProxyClass(string $class, ProxyStrategy $strategy, array $arguments, string $method): void
+    {
+        $firstAspect = new TargetsAspect();
+        $secondAspect = new TargetsAspect();
+        $first = ProxyFactory::fromAspects([$firstAspect], $strategy);
+        $second = ProxyFactory::fromAspects([$secondAspect], $strategy);
+        $build = static fn (ProxyFactory $f): object => ProxyStrategy::SUBCLASS === $strategy
+            ? $f->newInstance($class, $arguments)
+            : $f->createProxy(new $class(...$arguments));
+
+        $firstProxy = $build($first);
+        $secondProxy = $build($second);
+        self::assertSame($firstProxy::class, $secondProxy::class);
+
+        $firstProxy->{$method}('x');
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(0, $secondAspect->joinPoints);
+
+        $secondProxy->{$method}('x');
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(1, $secondAspect->joinPoints);
+    }
+
+    #[Test]
+    public function theRuntimeIsNotPartOfTheSerializedProxy(): void
+    {
+        $factory = $this->factory();
+        $proxy = $factory->newInstance(CountingConstructor::class, ['p-']);
+
+        $serialized = serialize($proxy);
+        self::assertFalse(str_contains($serialized, 'AopRuntime'), 'the runtime holds closures and services in a container');
+
+        $copy = unserialize($serialized);
+        self::assertInstanceOf(CountingConstructor::class, $copy);
+        Log::reset();
+        self::assertSame('p-x1', $copy->work('x'));
+        self::assertSame(['around>work', 'work', 'around<'], Log::$entries, 'an unserialized proxy uses the class-level runtime');
+    }
+
+    #[Test]
+    public function aWrappedWitherResultKeepsTheRuntimeOfItsOrigin(): void
+    {
+        $firstAspect = new TargetsAspect();
+        $secondAspect = new TargetsAspect();
+        $first = ProxyFactory::fromAspects([$firstAspect])->createProxy(new Builder());
+        ProxyFactory::fromAspects([$secondAspect])->createProxy(new Builder());
+        self::assertInstanceOf(BuilderInterface::class, $first);
+
+        $copy = $first->with('a');
+        $firstAspect->joinPoints = [];
+        $copy->value();
+
+        self::assertCount(1, $firstAspect->joinPoints);
+        self::assertCount(0, $secondAspect->joinPoints);
+    }
+
+    /**
+     * @return iterable<string, array{class-string, ProxyStrategy, list<mixed>, string}>
+     */
+    public static function runtimeIsolationTargets(): iterable
+    {
+        yield 'subclass' => [CountingConstructor::class, ProxyStrategy::SUBCLASS, ['p-'], 'work'];
+        yield 'readonly subclass' => [ReadonlyTarget::class, ProxyStrategy::SUBCLASS, ['ro'], 'value'];
+        yield 'interface' => [ReaderRepo::class, ProxyStrategy::INTERFACE, [], 'find'];
     }
 
     #[Test]
@@ -297,5 +426,163 @@ final class ProxyFactoryTest extends TestCase
         $worker = ProxyFactory::fromAspects([$aspect])->newInstance(CountingConstructor::class, ['p-']);
 
         self::assertSame('replaced', $worker->work('x'));
+    }
+
+    /**
+     * @return iterable<string, array{ProxyStrategy}>
+     */
+    public static function strategies(): iterable
+    {
+        yield 'subclass' => [ProxyStrategy::SUBCLASS];
+        yield 'interface' => [ProxyStrategy::INTERFACE];
+    }
+
+    /**
+     * @param list<object> $aspects
+     */
+    private static function refTarget(ProxyStrategy $strategy, array $aspects): RefTargetInterface
+    {
+        $factory = ProxyFactory::fromAspects($aspects, $strategy);
+        $proxy = ProxyStrategy::SUBCLASS === $strategy ? $factory->newInstance(RefTarget::class) : $factory->createProxy(new RefTarget());
+        \assert($proxy instanceof RefTargetInterface && $proxy instanceof AdvisedInterface);
+
+        return $proxy;
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function beforeAdviceSeesByReferenceValuesWithoutChangingThem(ProxyStrategy $strategy): void
+    {
+        $aspect = new RefBeforeAspect();
+        $proxy = self::refTarget($strategy, [$aspect]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(2, $n, 'the target writes through to the caller, advice overwriting its copies does not');
+        $list = ['a'];
+        self::assertSame(3, $proxy->appendAll($list, 'b', 'c'));
+        self::assertSame(['a', 'b', 'c'], $list);
+        $a = 1;
+        $b = 2;
+        $proxy->swap($a, $b);
+        self::assertSame([2, 1], [$a, $b]);
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([3, 6], [$x, $y]);
+
+        self::assertSame([[1], [['a'], 'b', 'c'], [1, 2], [3, 1, 2]], $aspect->args);
+        self::assertSame([1], $aspect->bound, 'args(n) binds the value');
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundProceedingOnceWritesThroughToTheCaller(ProxyStrategy $strategy): void
+    {
+        $proxy = self::refTarget($strategy, [new RefAroundAspect()]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(2, $n);
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([3, 6], [$x, $y]);
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundProceedingWithReplacedArgumentsGivesTheCallerTheTargetResult(ProxyStrategy $strategy): void
+    {
+        $around = new RefAroundAspect();
+        $before = new RefBeforeAspect();
+        $proxy = self::refTarget($strategy, [$around, $before]);
+
+        $around->replacement = [5];
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(6, $n);
+        self::assertSame([5], $before->bound, 'inner advice sees the replaced value');
+
+        $around->replacement = [3, 10, 20];
+        $x = 1;
+        $y = 2;
+        $proxy->scaleAll(3, $x, $y);
+        self::assertSame([30, 60], [$x, $y], 'variadic by-reference slots are written back too');
+
+        $around->replacement = [['z']];
+        $list = ['a'];
+        self::assertSame(1, $proxy->appendAll($list));
+        self::assertSame(['z'], $list);
+    }
+
+    #[Test]
+    #[DataProvider('strategies')]
+    public function aroundNotProceedingLeavesTheCallerVariableUntouched(ProxyStrategy $strategy): void
+    {
+        $around = new RefAroundAspect();
+        $around->proceed = false;
+        $proxy = self::refTarget($strategy, [$around]);
+
+        $n = 1;
+        $proxy->increment($n);
+        self::assertSame(1, $n);
+    }
+
+    /**
+     * @return iterable<string, array{ProxyStrategy|null, class-string}>
+     */
+    public static function introductionTargets(): iterable
+    {
+        yield 'subclass' => [null, WorkTarget::class];
+        yield 'subclass, readonly target' => [null, ReadonlyWorkTarget::class];
+        yield 'interface' => [ProxyStrategy::INTERFACE, FinalWorkTarget::class];
+    }
+
+    /**
+     * @param class-string $class
+     */
+    #[Test]
+    #[DataProvider('introductionTargets')]
+    public function introducedInterfaceIsUsableAndAdvisable(?ProxyStrategy $strategy, string $class): void
+    {
+        $factory = ProxyFactory::fromAspects([new IntroductionAspect()], $strategy);
+        $proxy = match ($class) {
+            WorkTarget::class => $factory->newInstance(WorkTarget::class),
+            ReadonlyWorkTarget::class => $factory->newInstance(ReadonlyWorkTarget::class, ['worked ']),
+            default => $factory->createProxy(new FinalWorkTarget()),
+        };
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        self::assertInstanceOf(Auditable::class, $proxy);
+        self::assertInstanceOf(WorkInterface::class, $proxy);
+
+        self::assertSame('worked x', $proxy->work('x'));
+        self::assertSame(['introduced recordAudit'], Log::$entries, 'this(auditable) bound the proxy, so the recording call was advised too');
+
+        Log::reset();
+        self::assertSame(['work(x)'], $proxy->auditTrail());
+        self::assertSame(['introduced auditTrail'], Log::$entries, 'execution(* Auditable::*(..)) matches introduced methods, target() and within() do not');
+    }
+
+    #[Test]
+    public function aClassWithOnlyAnIntroductionStillGetsAProxy(): void
+    {
+        $proxy = ProxyFactory::fromAspects([new IntroductionOnlyAspect()])->newInstance(BareTarget::class);
+
+        self::assertInstanceOf(AdvisedInterface::class, $proxy);
+        self::assertInstanceOf(Auditable::class, $proxy);
+        $proxy->recordAudit('a');
+        self::assertSame(['a'], $proxy->auditTrail());
+        self::assertSame('bare', $proxy->value());
+    }
+
+    #[Test]
+    public function thisOfAParentOfAnIntroducedInterfaceAdvisesTheIntroducedMethod(): void
+    {
+        $proxy = ProxyFactory::fromAspects([new TrackedIntroductionAspect()])->newInstance(BareTarget::class);
+
+        self::assertInstanceOf(Tracked::class, $proxy);
+        self::assertSame('tracked', $proxy->track());
+        self::assertSame(['this(Trackable) track'], Log::$entries);
     }
 }

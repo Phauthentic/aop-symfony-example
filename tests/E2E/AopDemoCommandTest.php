@@ -26,6 +26,8 @@ final class AopDemoCommandTest extends KernelTestCase
             greet('') failed: InvalidArgumentException: Name must not be empty
             flaky('x') = x
             placeOrder('SKU-1', 2) = Order SKU-1 x2 placed
+            StringService audit trail: reverse, upper, upper, greet, flaky
+            OrderService audit trail: placeOrder
             Trace:
             log before StringService::reverse(..)
             log after StringService::reverse(..)

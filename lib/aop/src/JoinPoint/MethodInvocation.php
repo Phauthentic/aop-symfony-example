@@ -34,9 +34,13 @@ final class MethodInvocation implements ProceedingJoinPointInterface
     ) {
     }
 
+    /**
+     * Current argument values; by-reference arguments are handed out as values, so changing the returned array
+     * never reaches the caller (use `proceed($args)` for that).
+     */
     public function getArgs(): array
     {
-        return $this->args;
+        return array_map(static fn (mixed $value): mixed => $value, $this->args);
     }
 
     public function getThis(): object
@@ -78,9 +82,36 @@ final class MethodInvocation implements ProceedingJoinPointInterface
         return $this->boundArguments;
     }
 
+    /**
+     * Replacement values for by-reference parameters reach the caller's variables after the rest of the chain
+     * returns (not when it throws): what the target wrote into them, or the replacement itself when it wrote nothing.
+     */
     public function proceed(?array $args = null): mixed
     {
-        $args ??= $this->args;
+        if (null === $args) {
+            return $this->next($this->args);
+        }
+
+        $cells = [];
+        foreach ($this->args as $key => $_) {
+            if (array_key_exists($key, $args) && null !== \ReflectionReference::fromArrayElement($this->args, $key)) {
+                $cells[$key] = $args[$key];
+                $args[$key] = &$cells[$key];
+            }
+        }
+        $result = $this->next($args);
+        foreach ($cells as $key => $value) {
+            $this->args[$key] = $value;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<int|string, mixed> $args
+     */
+    private function next(array $args): mixed
+    {
         $interceptor = $this->interceptors[$this->index] ?? null;
 
         if (null === $interceptor) {

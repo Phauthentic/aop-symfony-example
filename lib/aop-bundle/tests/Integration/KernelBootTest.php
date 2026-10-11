@@ -8,8 +8,12 @@ use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Symfony\PhauthenticAopBundle;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Log;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CountedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
@@ -68,6 +72,46 @@ final class KernelBootTest extends TestCase
         self::assertInstanceOf(AdvisedInterface::class, $service);
         self::assertSame('Hello x', $service->greet('x'));
         self::assertSame(['bean:greet', 'around>greet', 'greet', 'around<'], Log::$entries);
+
+        $name = ' y ';
+        $service->normalize($name);
+        self::assertSame('y', $name, 'by-reference parameters write through the proxy');
+    }
+
+    #[Test]
+    public function pertargetAspectGetsOneInstancePerAdvisedService(): void
+    {
+        $a = self::container()->get('fixture.counted_a');
+        $b = self::container()->get('fixture.counted_b');
+        self::assertInstanceOf(CountedService::class, $a);
+        self::assertInstanceOf(CountedService::class, $b);
+
+        $a->work();
+        $a->work();
+        $b->work();
+
+        $counts = array_values(array_filter(Log::$entries, static fn (string $e): bool => str_starts_with($e, 'counter#')));
+        self::assertCount(3, $counts);
+        [$a1, $a2, $b1] = array_map(static fn (string $e): array => explode(':', $e), $counts);
+        self::assertSame($a1[0], $a2[0]);
+        self::assertNotSame($a1[0], $b1[0]);
+        self::assertSame(['1', '2', '1'], [$a1[1], $a2[1], $b1[1]]);
+    }
+
+    #[Test]
+    public function introducedInterfaceIsImplementedAndItsMethodsAreAdvised(): void
+    {
+        $service = self::container()->get('fixture.audited');
+
+        self::assertInstanceOf(AuditedService::class, $service);
+        self::assertInstanceOf(Auditable::class, $service);
+        self::assertSame('worked', $service->work());
+        self::assertSame(['work'], $service->auditTrail());
+        self::assertSame(
+            ['around>work', 'work', 'around<', 'around>recordAudit', 'around<', 'around>auditTrail', 'around<'],
+            Log::$entries,
+            'this(auditable) binds the proxy, and introduced methods are advised like any other',
+        );
     }
 
     #[Test]
@@ -106,9 +150,11 @@ final class KernelBootTest extends TestCase
     {
         $service = self::container()->get(LazyService::class);
 
-        // A lazy proxy of the target class, not a ghost of the proxy class: see ProxyWeavingPass.
+        // A lazy proxy of the target class wrapping the advised instance, not a ghost of the proxy class: see the
+        // "Lazy services" section of docs/symfony.md for why.
         self::assertInstanceOf(LazyObjectInterface::class, $service);
         self::assertInstanceOf(LazyService::class, $service);
+        self::assertNotInstanceOf(AdvisedInterface::class, $service);
         self::assertFalse($service->isLazyObjectInitialized());
         self::assertSame([], Log::$entries);
 
@@ -203,5 +249,56 @@ final class KernelBootTest extends TestCase
         } finally {
             $kernel->shutdown();
         }
+    }
+
+    /**
+     * Compiles a strip_final kernel in this process (which has the final class loaded, as autowiring loads it anyway)
+     * and returns its base directory.
+     */
+    private static function stripFinalKernelDir(): string
+    {
+        $baseDir = TestKernel::newBaseDir();
+        $kernel = new TestKernel($baseDir, ['strip_final' => true]);
+        $kernel->boot();
+        $kernel->shutdown();
+
+        return $baseDir;
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private static function bootStripFinalKernelInFreshProcess(string $baseDir, string ...$args): array
+    {
+        $command = sprintf('%s %s %s 2>&1', escapeshellarg(PHP_BINARY), escapeshellarg(dirname(__DIR__).'/Fixtures/boot_strip_final.php'), implode(' ', array_map(escapeshellarg(...), [$baseDir, ...$args])));
+        exec($command, $output, $exitCode);
+        $stdout = implode("\n", $output);
+        self::assertSame(0, $exitCode, $stdout);
+        $result = json_decode($stdout, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($result);
+
+        /* @var array<string, mixed> $result */
+        return $result;
+    }
+
+    #[Test]
+    public function stripFinalAdvisesAFinalClassInAProcessThatLoadsItAfterBoot(): void
+    {
+        self::assertSame([
+            'advised' => true,
+            'final' => false,
+            'run' => 'run',
+            'stop' => 'stop',
+            'log' => ['around>run', 'run', 'around<', 'around>stop', 'around<'],
+        ], self::bootStripFinalKernelInFreshProcess(self::stripFinalKernelDir()));
+    }
+
+    #[Test]
+    public function stripFinalFailsClearlyWhenTheFinalClassWasLoadedBeforeBoot(): void
+    {
+        $result = self::bootStripFinalKernelInFreshProcess(self::stripFinalKernelDir(), '--load-early');
+
+        self::assertIsString($result['error'] ?? null);
+        self::assertStringContainsString('needs "'.FinalNoInterfaceService::class.'" to be loaded from its copy without "final", but the original was loaded first', $result['error']);
     }
 }

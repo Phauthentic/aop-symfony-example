@@ -8,6 +8,7 @@ use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\Factory;
 use Nette\PhpGenerator\Literal;
 use Nette\PhpGenerator\Method;
+use Nette\PhpGenerator\Parameter;
 use Nette\PhpGenerator\PhpFile;
 use Nette\PhpGenerator\PsrPrinter;
 use Nette\PhpGenerator\Visibility;
@@ -21,6 +22,11 @@ use Phauthentic\AOP\Runtime\AopRuntime;
  */
 final class ProxyCodeBuilder
 {
+    /**
+     * Expression resolving the runtime inside a generated proxy method: the instance's own, else the class-level fallback.
+     */
+    public const RUNTIME = 'self::__aopRuntime($this)';
+
     private readonly Factory $factory;
 
     public function __construct()
@@ -42,15 +48,100 @@ final class ProxyCodeBuilder
         $class = $file->addNamespace(substr($className, 0, $position))->addClass(substr($className, $position + 1));
         $class->setReadOnly($target->isReadOnly());
         $class->addImplement(AdvisedInterface::class);
-        // No default value: readonly classes forbid property defaults; `isset()` detects the unset state.
-        $class->addProperty('__aopRuntime')->setPrivate()->setType(AopRuntime::class);
+        // Per instance, so proxies of the same class wired by different factories or kernels keep their own runtime;
+        // the class-level fallback serves instances never wired themselves (`new static` inside the target, instances
+        // built before wiring, clones, unserialized copies). A WeakMap in a static local instead of a property keeps
+        // the runtime out of serialize(), var_dump() and readonly constraints; PHP rejects static properties on
+        // readonly classes.
+        $class->addMethod('__aopRuntime')
+            ->setPrivate()
+            ->setStatic()
+            ->setReturnType(AopRuntime::class)
+            ->setReturnNullable()
+            ->setBody(<<<'PHP'
+                static $current = null;
+                static $instances = new \WeakMap();
+                if (null !== $runtime) {
+                    $current = $instances[$instance] = $runtime;
+                }
+
+                return $instances[$instance] ?? $current;
+                PHP)
+            ->setParameters([
+                (new Parameter('instance'))->setType('object'),
+                (new Parameter('runtime'))->setType(AopRuntime::class)->setNullable()->setDefaultValue(null),
+            ]);
         $class->addMethod('__aopSetRuntime')
             ->setPublic()
             ->setReturnType('void')
-            ->setBody('$this->__aopRuntime = $runtime;')
+            ->setBody('self::__aopRuntime($this, $runtime);')
             ->addParameter('runtime')->setType(AopRuntime::class);
 
         return [$file, $class];
+    }
+
+    /**
+     * Makes the proxy implement the introduced interfaces. Their methods the target does not declare publicly delegate
+     * to one default implementation per proxy instance, created on first use; advised ones route through the runtime
+     * like target methods. The instances live in a `WeakMap` keyed by the proxy, which works for readonly classes too.
+     *
+     * @param \ReflectionClass<covariant object> $target
+     * @param array<class-string, class-string>  $introductions    interface => default implementation
+     * @param list<string>                       $advisedMethods
+     * @param string                             $targetExpression the advised instance as passed to the runtime
+     */
+    public function addIntroductions(ClassType $class, \ReflectionClass $target, array $introductions, array $advisedMethods, string $targetExpression): void
+    {
+        if ([] === $introductions) {
+            return;
+        }
+        $instances = [];
+        foreach ($introductions as $interface => $impl) {
+            $class->addImplement($interface);
+            $instances[] = sprintf('    \\%s::class => new \\%s(),', $interface, $impl);
+        }
+        $class->addMethod('__aopIntroduction')
+            ->setPrivate()
+            ->setReturnType('object')
+            ->setBody("static \$instances = null;\n\$instances ??= new \\WeakMap();\n\$instances[\$this] ??= [];\n\n"
+                ."return \$instances[\$this][\$interface] ??= match (\$interface) {\n".implode("\n", $instances)."\n};")
+            ->addParameter('interface')->setType('string');
+
+        foreach (MethodEligibility::introducedMethods($target, array_keys($introductions)) as $name => $method) {
+            $interface = $method->getDeclaringClass()->getName();
+            foreach (array_keys($introductions) as $introduced) {
+                if (is_a($introduced, $interface, true)) {
+                    $interface = $introduced;
+                    break;
+                }
+            }
+            $args = $this->forwardedArguments($method);
+            $signature = $this->signature($method)->setStatic($method->isStatic());
+            if ($method->isStatic()) {
+                $class->addMember($signature->setBody($this->returnStatement($method, sprintf('\\%s::%s(%s)', $introductions[$interface], $name, $args), false)));
+                continue;
+            }
+            $delegate = sprintf('$this->__aopIntroduction(\\%s::class)->%s', $interface, $name);
+            if (!in_array($name, $advisedMethods, true)) {
+                $class->addMember($signature->setBody($this->returnStatement($method, sprintf('%s(%s)', $delegate, $args), false)));
+                continue;
+            }
+            $invoke = sprintf(
+                '%s->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s(...$args))',
+                self::RUNTIME,
+                $targetExpression,
+                $target->getName(),
+                var_export($name, true),
+                $this->argumentArray($method),
+                $delegate,
+            );
+            $class->addMember($signature->setBody(
+                'if (null === '.self::RUNTIME.") {\n"
+                .'    '.str_replace("\n", "\n    ", $this->returnStatement($method, sprintf('%s(%s)', $delegate, $args), true))."\n"
+                ."}\n"
+                .$this->returnStatement($method, $invoke, false),
+            ));
+        }
     }
 
     /**
@@ -89,6 +180,18 @@ final class ProxyCodeBuilder
             static fn (\ReflectionParameter $p): string => ($p->isVariadic() ? '...$' : '$').$p->getName(),
             $method->getParameters(),
         ));
+    }
+
+    /**
+     * `[&$a, $b, ...$rest]`: the argument array handed to the runtime. By-reference parameters enter it as references,
+     * so spreading it into the target binds the caller's variables; a by-reference variadic tail keeps its references when spread.
+     */
+    public function argumentArray(\ReflectionMethod $method): string
+    {
+        return '['.implode(', ', array_map(
+            static fn (\ReflectionParameter $p): string => ($p->isVariadic() ? '...' : ($p->isPassedByReference() ? '&' : '')).'$'.$p->getName(),
+            $method->getParameters(),
+        )).']';
     }
 
     /**

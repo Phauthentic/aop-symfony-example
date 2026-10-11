@@ -36,6 +36,17 @@ final class Configuration implements ConfigurationInterface
             ->defaultValue([]);
         $exclude->scalarPrototype();
 
+        $children->booleanNode('strip_final')
+            ->info('Risky: weave final classes and methods with subclass proxies of a copy whose `final` modifiers are removed; see docs/symfony.md')
+            ->defaultFalse();
+        $stripInclude = $children->arrayNode('strip_final_include')
+            ->info('Type patterns of classes whose `final` may be removed; defaults to the include patterns');
+        $stripInclude->scalarPrototype()->cannotBeEmpty();
+
+        $root->validate()
+            ->ifTrue(static fn (mixed $config): bool => \is_array($config) && [] === ($config['strip_final_include'] ?? []))
+            ->then(static fn (array $config): array => array_replace($config, ['strip_final_include' => $config['include']]));
+
         return $tree;
     }
 }

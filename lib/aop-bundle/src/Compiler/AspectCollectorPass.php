@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Symfony\Compiler;
 
+use Phauthentic\AOP\Aspect\AspectMetadataReader;
+use Phauthentic\AOP\Aspect\AspectScope;
 use Phauthentic\AOP\Symfony\Container\AdvisorRegistryFactory;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -24,6 +26,7 @@ final class AspectCollectorPass implements CompilerPassInterface
             return;
         }
 
+        $reader = new AspectMetadataReader();
         $locator = [];
         foreach (array_keys($container->findTaggedServiceIds(self::TAG)) as $id) {
             $class = $container->getParameterBag()->resolveValue($container->getDefinition($id)->getClass() ?? $id);
@@ -33,6 +36,10 @@ final class AspectCollectorPass implements CompilerPassInterface
                 throw new InvalidArgumentException(sprintf('Aspect service "%s" has no loadable class.', $id));
             }
             $locator[$reflection->getName()] = new Reference($id);
+            // pertarget/perthis aspects need a fresh instance per scope object.
+            if (AspectScope::SINGLETON !== $reader->read($reflection)->scope) {
+                $container->getDefinition($id)->setShared(false);
+            }
         }
 
         $aspectClasses = array_keys($locator);

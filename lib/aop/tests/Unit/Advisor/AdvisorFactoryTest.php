@@ -7,12 +7,19 @@ namespace Phauthentic\AOP\Tests\Unit\Advisor;
 use Phauthentic\AOP\Advice\AdviceType;
 use Phauthentic\AOP\Advisor\AdvisorFactory;
 use Phauthentic\AOP\Advisor\MetadataNamedPointcutResolver;
+use Phauthentic\AOP\Aspect\AspectMetadata;
 use Phauthentic\AOP\Aspect\AspectMetadataReader;
+use Phauthentic\AOP\Aspect\IntroductionDefinition;
 use Phauthentic\AOP\Exception\PointcutSyntaxException;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\CrossReferenceAspect;
+use Phauthentic\AOP\Tests\Fixtures\Aspect\IntroductionOnlyAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\NamedPointcutAspect;
 use Phauthentic\AOP\Tests\Fixtures\Aspect\RecordingAspectA;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\AuditTrail;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\BareTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\FinalWorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use Phauthentic\AOP\Tests\Fixtures\Service\Greeter;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -23,6 +30,24 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(MetadataNamedPointcutResolver::class)]
 final class AdvisorFactoryTest extends TestCase
 {
+    #[Test]
+    public function buildsIntroductionAdvisorsWithTypePatternAndOrder(): void
+    {
+        $meta = new AspectMetadata(IntroductionOnlyAspect::class, 7, [], [], [
+            new IntroductionDefinition('Phauthentic\AOP\Tests\Fixtures\Introduction\WorkInterface+', Auditable::class, AuditTrail::class),
+        ]);
+
+        $introductions = (new AdvisorFactory())->introductionsFromMetadata($meta);
+
+        self::assertCount(1, $introductions);
+        self::assertSame(IntroductionOnlyAspect::class, $introductions[0]->aspectClass);
+        self::assertSame(7, $introductions[0]->order);
+        self::assertSame(Auditable::class, $introductions[0]->interface);
+        self::assertSame(AuditTrail::class, $introductions[0]->defaultImpl);
+        self::assertTrue($introductions[0]->typePattern->matchesType(Reflect::cls(FinalWorkTarget::class)), 'a trailing + includes subtypes');
+        self::assertFalse($introductions[0]->typePattern->matchesType(Reflect::cls(BareTarget::class)));
+    }
+
     #[Test]
     public function buildsOneAdvisorPerAdviceWithIdOrderAndPointcut(): void
     {

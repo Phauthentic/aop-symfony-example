@@ -11,11 +11,15 @@ use Phauthentic\AOP\Pointcut\Pattern\NamePattern;
 use Phauthentic\AOP\Pointcut\Pattern\ParameterPattern;
 use Phauthentic\AOP\Pointcut\Pattern\TypePattern;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
+use Phauthentic\AOP\Proxy\ProxyStrategy;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\Plain;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\ReadableInterface;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\RepositoryInterface;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\Sub\ExtraRepository;
 use Phauthentic\AOP\Tests\Fixtures\Hierarchy\UserRepository;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\Auditable;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\ClashingPrivateTarget;
+use Phauthentic\AOP\Tests\Fixtures\Introduction\WorkTarget;
 use Phauthentic\AOP\Tests\Fixtures\Pointcut\Reflect;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -194,5 +198,30 @@ final class ExecutionPointcutTest extends TestCase
 
         self::assertFalse($pointcut->isRuntime());
         self::assertSame([], $pointcut->bindings());
+    }
+
+    #[Test]
+    public function introducedMethodsBelongToTheIntroducedInterfaceOnly(): void
+    {
+        $target = Reflect::cls(WorkTarget::class);
+        $ctx = new StaticMatchContext($target, null, ProxyStrategy::SUBCLASS, [Auditable::class]);
+        $introduced = new \ReflectionMethod(Auditable::class, 'recordAudit');
+        $ofInterface = $this->pointcut(declaring: new TypePattern(Auditable::class));
+        $ofTarget = $this->pointcut(declaring: new TypePattern(WorkTarget::class));
+
+        self::assertTrue($ofInterface->matchesClass($target, $ctx) && $ofInterface->matchesMethod($introduced, $ctx));
+        self::assertFalse($ofInterface->matchesMethod($target->getMethod('work'), $ctx), 'methods of the target are not declared by the introduced interface');
+        self::assertFalse($ofInterface->matchesClass($target, new StaticMatchContext($target)), 'without the introduction the target has no such ancestor');
+        self::assertFalse($ofTarget->matchesMethod($introduced, $ctx), 'the target type does not declare introduced methods');
+        self::assertTrue($this->pointcut()->matchesMethod($introduced, $ctx));
+    }
+
+    #[Test]
+    public function aNonPublicTargetMethodDoesNotHideTheIntroducedOneOfTheSameName(): void
+    {
+        $target = Reflect::cls(ClashingPrivateTarget::class);
+        $ctx = new StaticMatchContext($target, null, ProxyStrategy::SUBCLASS, [Auditable::class]);
+
+        self::assertTrue($this->pointcut(declaring: new TypePattern(Auditable::class))->matchesMethod(new \ReflectionMethod(Auditable::class, 'recordAudit'), $ctx));
     }
 }

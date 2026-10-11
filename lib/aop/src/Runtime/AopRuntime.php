@@ -12,6 +12,8 @@ use Phauthentic\AOP\Interceptor\MethodInterceptorInterface;
 use Phauthentic\AOP\JoinPoint\MethodInvocation;
 use Phauthentic\AOP\JoinPoint\MethodSignature;
 use Phauthentic\AOP\Pointcut\StaticMatchContext;
+use Phauthentic\AOP\Proxy\AdvisedInterface;
+use Phauthentic\AOP\Proxy\MethodEligibility;
 use Phauthentic\AOP\Proxy\ProxyStrategy;
 
 /**
@@ -40,14 +42,19 @@ final class AopRuntime
 
     /**
      * @param class-string                              $class
-     * @param array<int|string, mixed>                  $args
+     * @param array<int|string, mixed>                  $args          by-reference parameters as references to the caller's variables
      * @param \Closure(array<int|string, mixed>): mixed $targetInvoker
      */
     public function invoke(object $proxy, object $target, string $class, string $method, array $args, \Closure $targetInvoker): mixed
     {
         [$interceptors, $signature, $arounds] = $this->chains[$proxy::class.'::'.$method] ??= $this->build($proxy, $class, $method);
 
-        $result = (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+        AopContext::push($proxy);
+        try {
+            $result = (new MethodInvocation($proxy, $target, $signature, $args, $interceptors, $targetInvoker))->proceed();
+        } finally {
+            AopContext::pop();
+        }
 
         // Only an Around advice can replace the target's result; the target itself is type-checked by PHP.
         if ([] !== $arounds && !ReturnTypeCheck::accepts($signature->method->getReturnType(), $result, $proxy, $target, $signature->className)) {
@@ -67,8 +74,10 @@ final class AopRuntime
         // A subclass proxy is an instance of the target class, an interface proxy is not; `this()` matching depends on it.
         $strategy = $proxy instanceof $class ? ProxyStrategy::SUBCLASS : ProxyStrategy::INTERFACE;
         $rc = new \ReflectionClass($class);
-        $rm = $rc->getMethod($method);
-        $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy);
+        $introduced = self::introducedInterfaces($proxy, $rc);
+        // Same rule as the generators: a name the target does not declare publicly is the introduced method.
+        $rm = MethodEligibility::introducedMethods($rc, $introduced)[$method] ?? $rc->getMethod($method);
+        $ctx = new StaticMatchContext($rc, $this->beanName($proxy, $class), $strategy, $introduced);
         $advisors = $this->factory->matchedAdvisors($rc, $rm, $ctx);
         $arounds = array_values(array_map(
             static fn (Advisor $a): string => $a->id,
@@ -76,6 +85,24 @@ final class AopRuntime
         ));
 
         return [$this->factory->chainFor($advisors, $ctx), MethodSignature::fromReflection($rm), $arounds];
+    }
+
+    /**
+     * Interfaces the generated proxy class implements beyond the target's and AdvisedInterface. Subclasses of the
+     * proxy (e.g. lazy ghosts) are skipped, their own interfaces are not introductions.
+     *
+     * @param \ReflectionClass<object> $target
+     *
+     * @return list<class-string>
+     */
+    private static function introducedInterfaces(object $proxy, \ReflectionClass $target): array
+    {
+        $class = $proxy::class;
+        while (false !== ($parent = get_parent_class($class)) && is_a($parent, AdvisedInterface::class, true)) {
+            $class = $parent;
+        }
+
+        return array_values(array_diff(class_implements($class) ?: [], $target->getInterfaceNames(), [AdvisedInterface::class]));
     }
 
     /**

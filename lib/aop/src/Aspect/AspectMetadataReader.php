@@ -12,6 +12,7 @@ use Phauthentic\AOP\Attribute\AfterThrowing;
 use Phauthentic\AOP\Attribute\Around;
 use Phauthentic\AOP\Attribute\Aspect;
 use Phauthentic\AOP\Attribute\Before;
+use Phauthentic\AOP\Attribute\DeclareParents;
 use Phauthentic\AOP\Attribute\Order;
 use Phauthentic\AOP\Attribute\Pointcut;
 use Phauthentic\AOP\Exception\AspectDefinitionException;
@@ -30,6 +31,7 @@ final class AspectMetadataReader
             throw new AspectDefinitionException(sprintf('Class "%s" is not an aspect: missing #[Aspect] attribute.', $name));
         }
 
+        $scope = $rc->getAttributes(Aspect::class)[0]->newInstance()->scope;
         $order = ($rc->getAttributes(Order::class)[0] ?? null)?->newInstance()->value ?? PHP_INT_MAX;
         $pointcuts = [];
         $advices = [];
@@ -82,9 +84,48 @@ final class AspectMetadataReader
                 $instance instanceof AfterReturning ? $instance->returning : null,
                 $instance instanceof AfterThrowing ? $instance->throwing : null,
                 count($advices),
+                $scope,
             );
         }
 
-        return new AspectMetadata($name, $order, $pointcuts, $advices);
+        return new AspectMetadata($name, $order, $pointcuts, $advices, self::introductions($rc), $scope);
+    }
+
+    /**
+     * @param \ReflectionClass<covariant object> $aspect
+     *
+     * @return list<IntroductionDefinition>
+     */
+    private static function introductions(\ReflectionClass $aspect): array
+    {
+        $introductions = [];
+        foreach ($aspect->getAttributes(DeclareParents::class) as $attribute) {
+            $declaration = $attribute->newInstance();
+            $interface = ltrim($declaration->interface, '\\');
+            $impl = ltrim($declaration->defaultImpl, '\\');
+            $problem = match (true) {
+                !interface_exists($interface) => sprintf('"%s" is not an interface', $interface),
+                !class_exists($impl) => sprintf('default implementation "%s" does not exist', $impl),
+                !is_subclass_of($impl, $interface) => sprintf('default implementation "%s" does not implement "%s"', $impl, $interface),
+                !self::instantiableWithoutArguments(new \ReflectionClass($impl)) => sprintf('default implementation "%s" must be a concrete class whose public constructor can be called without arguments', $impl),
+                default => null,
+            };
+            if (null !== $problem) {
+                throw new AspectDefinitionException(sprintf('Invalid #[DeclareParents] on aspect "%s": %s.', $aspect->getName(), $problem));
+            }
+            $introductions[] = new IntroductionDefinition($declaration->typePattern, $interface, $impl);
+        }
+
+        return $introductions;
+    }
+
+    /**
+     * @param \ReflectionClass<object> $class
+     */
+    private static function instantiableWithoutArguments(\ReflectionClass $class): bool
+    {
+        $constructor = $class->getConstructor();
+
+        return $class->isInstantiable() && (null === $constructor || 0 === $constructor->getNumberOfRequiredParameters());
     }
 }

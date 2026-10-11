@@ -30,8 +30,7 @@ final class MethodEligibilityTest extends TestCase
         yield 'final' => ['locked', 'final'];
         yield 'constructor' => ['__construct', 'magic'];
         yield 'magic' => ['__toString', 'magic'];
-        yield 'by-reference parameter' => ['byRef', 'by reference'];
-        yield 'by-reference return' => ['refReturn', 'by reference'];
+        yield 'by-reference return' => ['refReturn', 'methods returning by reference are not supported'];
         yield 'object default' => ['objectDefault', 'default'];
     }
 
@@ -43,6 +42,12 @@ final class MethodEligibilityTest extends TestCase
 
         self::assertNotNull($reason);
         self::assertStringContainsStringIgnoringCase($reasonFragment, $reason);
+    }
+
+    #[Test]
+    public function finalMethodsAreEligibleWhenFinalIsAllowed(): void
+    {
+        self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(MixedMethods::class, 'locked'), ProxyStrategy::SUBCLASS, allowFinal: true));
     }
 
     #[Test]
@@ -60,6 +65,7 @@ final class MethodEligibilityTest extends TestCase
         self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(MixedMethods::class, 'plain'), ProxyStrategy::SUBCLASS));
         self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(MixedMethods::class, 'guarded'), ProxyStrategy::SUBCLASS));
         self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(SignatureShapes::class, 'defaults'), ProxyStrategy::SUBCLASS));
+        self::assertNull(MethodEligibility::reasonForExclusion(new \ReflectionMethod(MixedMethods::class, 'byRef'), ProxyStrategy::SUBCLASS), 'by-reference parameters are advisable');
     }
 
     #[Test]

@@ -7,7 +7,7 @@ namespace Phauthentic\AOP\Proxy;
 /**
  * JDK-like proxy: implements every interface of the target and delegates to the wrapped instance.
  * Self-invocation inside the target bypasses advice. A method returning the target itself returns the proxy,
- * one returning another instance of the target class (a wither) returns a new proxy around it sharing the runtime.
+ * one returning another instance of the target class (a wither) returns a new proxy around it wired to the same runtime.
  */
 final class InterfaceProxyGenerator implements ProxyGeneratorInterface
 {
@@ -17,10 +17,11 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     {
     }
 
-    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = ''): GeneratedProxy
+    public function generate(\ReflectionClass $target, array $advisedMethods, string $salt = '', array $introductions = []): GeneratedProxy
     {
         sort($advisedMethods);
-        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods, $salt);
+        ksort($introductions);
+        $className = ProxyClassName::for($target->getName(), ProxyStrategy::INTERFACE, $advisedMethods, $salt, $introductions);
         [$file, $class] = $this->builder->createClass($className, $target);
 
         $interfaces = self::minimalInterfaces($target);
@@ -39,16 +40,20 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             if (!$result instanceof \%2$s) {
                 return $result;
             }
+
             $proxy = new static($result);
-            if (isset($this->__aopRuntime)) {
-                $proxy->__aopSetRuntime($this->__aopRuntime);
+            $runtime = self::__aopRuntime($this);
+            if (null !== $runtime) {
+                $proxy->__aopSetRuntime($runtime);
             }
 
             return $proxy;
             PHP, self::TARGET, $target->getName()))
             ->addParameter('result')->setType('mixed');
 
-        foreach (self::interfaceMethodNames($target) as $name) {
+        $this->builder->addIntroductions($class, $target, $introductions, $advisedMethods, self::TARGET);
+
+        foreach (self::interfaceMethodNames($target, array_keys($introductions)) as $name) {
             // The target's own declaration is compatible with every interface declaring the method.
             $method = $target->getMethod($name);
             $signature = $this->builder->signature($method)->setStatic($method->isStatic());
@@ -62,16 +67,17 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
                 $body = $this->builder->returnStatement($method, sprintf('%s->%s(%s)', self::TARGET, $name, $args), false, $wrap);
             } else {
                 $invoke = sprintf(
-                    '$this->__aopRuntime->invoke($this, %s, \\%s::class, %s, [%s], fn (array $args): mixed => %s->%s(...$args))',
+                    '%s->invoke($this, %s, \\%s::class, %s, %s, fn (array $args): mixed => %s->%s(...$args))',
+                    ProxyCodeBuilder::RUNTIME,
                     self::TARGET,
                     $target->getName(),
                     var_export($name, true),
-                    $args,
+                    $this->builder->argumentArray($method),
                     self::TARGET,
                     $name,
                 );
                 $direct = sprintf('%s->%s(%s)', self::TARGET, $name, $args);
-                $body = "if (!isset(\$this->__aopRuntime)) {\n"
+                $body = 'if (null === '.ProxyCodeBuilder::RUNTIME.") {\n"
                     .'    '.str_replace("\n", "\n    ", $this->builder->returnStatement($method, $direct, true, $wrap))."\n"
                     ."}\n"
                     .$this->builder->returnStatement($method, $invoke, false, $wrap);
@@ -79,7 +85,7 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
             $class->addMember($signature->setBody($body));
         }
 
-        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::INTERFACE, $advisedMethods);
+        return new GeneratedProxy($className, $this->builder->print($file), ProxyStrategy::INTERFACE, $advisedMethods, $introductions);
     }
 
     /**
@@ -101,15 +107,24 @@ final class InterfaceProxyGenerator implements ProxyGeneratorInterface
     }
 
     /**
-     * Names of all methods declared by the target's interfaces.
+     * Names of all methods declared by the target's interfaces, plus methods of introduced interfaces the target
+     * declares publicly itself (the proxy forwards those to the target instead of the default implementation).
      *
      * @param \ReflectionClass<covariant object> $target
+     * @param list<class-string>                 $introduced
      *
      * @return list<string>
      */
-    private static function interfaceMethodNames(\ReflectionClass $target): array
+    private static function interfaceMethodNames(\ReflectionClass $target, array $introduced): array
     {
         $names = [];
+        foreach ($introduced as $interface) {
+            foreach ((new \ReflectionClass($interface))->getMethods() as $method) {
+                if ($target->hasMethod($method->getName()) && $target->getMethod($method->getName())->isPublic()) {
+                    $names[$method->getName()] = true;
+                }
+            }
+        }
         foreach ($target->getInterfaces() as $interface) {
             if (AdvisedInterface::class === $interface->getName()) {
                 continue;

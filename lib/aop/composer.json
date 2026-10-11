@@ -1,1 +1,1 @@
-{"name": "phauthentic/aop", "type": "library", "license": "MIT", "require": {"php": ">=8.2", "nette/php-generator": "^4.2"}, "autoload": {"psr-4": {"Phauthentic\\AOP\\": "src/"}}, "autoload-dev": {"psr-4": {"Phauthentic\\AOP\\Tests\\": "tests/"}}}
+{"name": "phauthentic/aop", "type": "library", "license": "MIT", "require": {"php": ">=8.3", "nette/php-generator": "^4.2"}, "autoload": {"psr-4": {"Phauthentic\\AOP\\": "src/"}}, "autoload-dev": {"psr-4": {"Phauthentic\\AOP\\Tests\\": "tests/"}}}

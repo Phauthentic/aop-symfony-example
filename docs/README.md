@@ -13,16 +13,17 @@ Jump straight to a page if you know what you are looking for.
 | 2 | [Pointcut expressions](pointcuts.md) | You write or debug an expression and need the grammar, every designator, and the pattern rules. |
 | 3 | [Advice](advice.md) | You write an aspect and need the five advice types, parameter binding, and execution order. |
 | 4 | [Proxies](proxies.md) | You wonder why a method is not advised, which strategy a class gets, or what the generated code looks like. |
-| 5 | [Symfony bundle](symfony.md) | You install, configure, or troubleshoot the bundle, or want to know how weaving fits into the container build. |
-| 6 | [Standalone usage](standalone.md) | You use the core without Symfony through `ProxyFactory`. |
-| 7 | [Examples](examples.md) | You want complete, copy-pasteable aspects: logging, validation, retry, caching, interface-proxied final class. |
-| 8 | [Architecture](architecture.md) | You contribute to the library and need the package layout, class responsibilities, extension points, and the test setup. |
+| 5 | [Introductions](introductions.md) | You want advised objects to implement an extra interface through `#[DeclareParents]`. |
+| 6 | [Symfony bundle](symfony.md) | You install, configure, or troubleshoot the bundle, or want to know how weaving fits into the container build. |
+| 7 | [Standalone usage](standalone.md) | You use the core without Symfony through `ProxyFactory`. |
+| 8 | [Examples](examples.md) | You want complete, copy-pasteable aspects: logging, validation, retry, caching, interface-proxied final class. |
+| 9 | [Architecture](architecture.md) | You contribute to the library and need the package layout, class responsibilities, extension points, and the test setup. |
 
 ## Quick commands
 
 ```bash
 bin/console app:aop-demo   # runs the demo scenarios in src/ and prints the advice trace
-bin/console debug:aop      # lists advised services, methods, advisors and skipped services
+bin/console debug:aop      # lists advised services, methods, advisors, introduced interfaces and skipped services
 composer check             # php-cs-fixer, phpstan (level max), phpunit
 ```
 

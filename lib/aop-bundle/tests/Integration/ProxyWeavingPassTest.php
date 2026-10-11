@@ -4,22 +4,32 @@ declare(strict_types=1);
 
 namespace Phauthentic\AOP\Symfony\Tests\Integration;
 
+use Phauthentic\AOP\Exception\AspectDefinitionException;
 use Phauthentic\AOP\Proxy\AdvisedInterface;
 use Phauthentic\AOP\Proxy\ProxyClassName;
 use Phauthentic\AOP\Proxy\ProxyClassWriter;
 use Phauthentic\AOP\Symfony\Compiler\ProxyWeavingPass;
 use Phauthentic\AOP\Symfony\ProxyAutoloader;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ArgsAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\AuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\BeanAspect;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\ClashingAuditAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Aspect\LogAspect;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\BundleContainer;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\ExcludedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ArgsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\Auditable;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditedService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\AuditTrail;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\CallsService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ClashingAuditedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FactoryCreatedService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalNoInterfaceService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\FinalService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\LazyService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\OrderSubscriber;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\PlainService;
+use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\SelfCallingService;
 use Phauthentic\AOP\Symfony\Tests\Fixtures\Service\ShoutInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,9 +41,10 @@ use Symfony\Component\DependencyInjection\Reference;
 final class ProxyWeavingPassTest extends TestCase
 {
     /**
-     * @param array<string, mixed> $config
+     * @param array<string, mixed>                    $config
+     * @param (\Closure(ContainerBuilder): void)|null $register registers additional services
      */
-    private function compiled(array $config = []): ContainerBuilder
+    private function compiled(array $config = [], ?\Closure $register = null): ContainerBuilder
     {
         $container = BundleContainer::create($config + ['exclude' => ['Phauthentic\AOP\Symfony\Tests\Fixtures\Excluded\**']]);
         $container->register(LogAspect::class, LogAspect::class)->setAutoconfigured(true);
@@ -46,20 +57,28 @@ final class ProxyWeavingPassTest extends TestCase
         $container->register(FactoryCreatedService::class.'.with_file', FactoryCreatedService::class)->setPublic(true)->setFile(__FILE__);
         $container->register(LazyService::class, LazyService::class)->setPublic(true)->setLazy(true);
         $container->register(FinalNoInterfaceService::class, FinalNoInterfaceService::class)->setPublic(true);
+        $container->register(SelfCallingService::class, SelfCallingService::class)->setPublic(true);
         $container->register(OrderSubscriber::class, OrderSubscriber::class)->addTag('kernel.event_subscriber');
         $container->register('fixture.untagged_subscriber', OrderSubscriber::class)->setPublic(true);
         $container->register(ExcludedService::class, ExcludedService::class)->setPublic(true);
+        $container->register(AuditAspect::class, AuditAspect::class)->setAutoconfigured(true);
+        $container->register('fixture.audited', AuditedService::class)->setPublic(true);
+        $container->register(ArgsAspect::class, ArgsAspect::class)->setAutoconfigured(true);
+        $container->register('fixture.args', ArgsService::class)->setPublic(true);
+        if (null !== $register) {
+            $register($container);
+        }
         BundleContainer::compile($container);
 
         return $container;
     }
 
     /**
-     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>}
+     * @return array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>, finalStripped?: bool, warning?: string}>, skipped: array<string, array{class: string, reason: string}>}
      */
     private static function report(ContainerBuilder $container): array
     {
-        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>}>, skipped: array<string, array{class: string, reason: string}>} $report */
+        /** @var array{advised: array<string, array{class: string, proxy: string, strategy: string, methods: array<string, list<string>>, advisors: array<string, list<array{advisor: string, runtime: bool, designators: list<string>}>>, selfInvocations?: list<array{caller: string, method: string, file: string, line: int}>, introductions?: array<string, string>, finalStripped?: bool, warning?: string}>, skipped: array<string, array{class: string, reason: string}>} $report */
         $report = $container->getParameter('phauthentic_aop.weaving_report');
 
         return $report;
@@ -209,13 +228,191 @@ final class ProxyWeavingPassTest extends TestCase
             'class' => PlainService::class,
             'proxy' => $report['advised']['fixture.service']['proxy'],
             'strategy' => 'subclass',
-            'methods' => ['greet' => [BeanAspect::class.'::before', LogAspect::class.'::around']],
+            'methods' => [
+                'greet' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
+                'normalize' => [BeanAspect::class.'::before', LogAspect::class.'::around'],
+            ],
+            'advisors' => [
+                'greet' => [
+                    ['advisor' => BeanAspect::class.'::before', 'runtime' => false, 'designators' => []],
+                    ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+                ],
+                'normalize' => [
+                    ['advisor' => BeanAspect::class.'::before', 'runtime' => false, 'designators' => []],
+                    ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+                ],
+            ],
         ], $report['advised']['fixture.service']);
-        self::assertSame(['greet' => [LogAspect::class.'::around']], $report['advised']['fixture.other']['methods']);
+        self::assertSame(['greet' => [LogAspect::class.'::around'], 'normalize' => [LogAspect::class.'::around']], $report['advised']['fixture.other']['methods'], 'by-reference parameters are advised');
         self::assertSame(['decorate' => [LogAspect::class.'::around']], $report['advised'][CallsService::class]['methods']);
         self::assertSame(FinalNoInterfaceService::class, $report['skipped'][FinalNoInterfaceService::class]['class']);
         self::assertStringContainsString('final', $report['skipped'][FinalNoInterfaceService::class]['reason']);
         self::assertArrayNotHasKey(ExcludedService::class, $report['advised'] + $report['skipped']);
+        self::assertArrayNotHasKey('finalStripped', $report['advised']['fixture.service']);
+    }
+
+    private static function proxyDir(ContainerBuilder $container): string
+    {
+        $dir = $container->getParameterBag()->resolveValue('%kernel.build_dir%/phauthentic_aop');
+        self::assertIsString($dir);
+
+        return $dir;
+    }
+
+    #[Test]
+    public function finalClassesAreNotStrippedByDefault(): void
+    {
+        $container = $this->compiled();
+
+        self::assertSame(FinalNoInterfaceService::class, $container->getDefinition(FinalNoInterfaceService::class)->getClass());
+        self::assertSame('interface', self::report($container)['advised'][FinalService::class]['strategy']);
+        self::assertDirectoryDoesNotExist(self::proxyDir($container).'/'.ProxyAutoloader::UNFINALIZED_DIR);
+    }
+
+    #[Test]
+    public function stripFinalWeavesAFinalClassLoadedBeforeWeavingWithoutLoadingItsProxy(): void
+    {
+        self::assertTrue(class_exists(FinalNoInterfaceService::class));
+        $container = $this->compiled(['strip_final' => true], static function (ContainerBuilder $container): void {
+            $container->register('fixture.final_lazy', FinalNoInterfaceService::class)->setPublic(true)->setLazy(true);
+        });
+        $report = self::report($container);
+        $definition = $container->getDefinition(FinalNoInterfaceService::class);
+        $proxyClass = (string) $definition->getClass();
+
+        $entry = $report['advised'][FinalNoInterfaceService::class];
+        self::assertSame('subclass', $entry['strategy']);
+        self::assertSame(['run', 'stop'], array_keys($entry['methods']), 'final methods are advised too');
+        self::assertFalse($entry['finalStripped'] ?? null);
+        self::assertStringContainsString('was loaded before weaving', $entry['warning'] ?? '');
+        self::assertFalse(class_exists($proxyClass, false), 'a subclass of the loaded final class cannot be declared in this process');
+        self::assertFileExists((new ProxyClassWriter(self::proxyDir($container)))->pathFor($proxyClass));
+        self::assertTrue($definition->hasTag('container.no_preload'), 'preloading would load the final original');
+
+        $map = require self::proxyDir($container).'/'.ProxyAutoloader::UNFINALIZED_DIR.'/'.ProxyAutoloader::UNFINALIZED_MAP;
+        self::assertIsArray($map);
+        $source = (string) (new \ReflectionClass(FinalNoInterfaceService::class))->getFileName();
+        $entry = $map[FinalNoInterfaceService::class] ?? null;
+        self::assertIsArray($entry);
+        self::assertSame($source, $entry['source'] ?? null);
+        self::assertSame([$proxyClass], $entry['proxies'] ?? null);
+        self::assertIsString($entry['file'] ?? null);
+        $copy = (string) file_get_contents(self::proxyDir($container).'/'.ProxyAutoloader::UNFINALIZED_DIR.'/'.$entry['file']);
+        self::assertStringContainsString("\nclass FinalNoInterfaceService\n", $copy);
+        self::assertStringContainsString("\n    public function stop()", $copy);
+        self::assertStringNotContainsString('final ', $copy);
+
+        self::assertStringContainsString('final and implements no interface', $report['skipped']['fixture.final_lazy']['reason'] ?? '', 'lazy services are not stripped');
+        self::assertSame('subclass', $report['advised'][FinalService::class]['strategy'], 'final classes with interfaces get subclass proxies too');
+    }
+
+    #[Test]
+    public function stripFinalLoadsTheUnfinalizedCopyOfAClassNotLoadedYet(): void
+    {
+        $class = 'Phauthentic\AOP\Symfony\Tests\Fixtures\Service\UnloadedFinalService';
+        $container = $this->compiled(['strip_final' => true], static function (ContainerBuilder $container) use ($class): void {
+            $container->register($class, $class)->setPublic(true);
+        });
+        $entry = self::report($container)['advised'][$class];
+        $proxyClass = (string) $container->getDefinition($class)->getClass();
+
+        self::assertTrue($entry['finalStripped'] ?? null);
+        self::assertArrayNotHasKey('warning', $entry);
+        self::assertSame(['run'], array_keys($entry['methods']));
+        self::assertFalse((new \ReflectionClass($class))->isFinal());
+        self::assertTrue(class_exists($proxyClass, false));
+        self::assertTrue(is_subclass_of($proxyClass, $class));
+        self::assertContains(
+            realpath(\dirname((string) (new \ReflectionClass(PlainService::class))->getFileName()).'/UnloadedFinalService.php'),
+            array_map(static fn (\Stringable $r): string => (string) $r, $container->getResources()),
+            'the original file is tracked, not only the copy reflection points to',
+        );
+    }
+
+    #[Test]
+    public function stripFinalTracksTheOriginalFileOfAClassLoadedFromItsCopyButNotWoven(): void
+    {
+        $class = 'Phauthentic\AOP\Symfony\Tests\Fixtures\Service\UnwovenFinalService';
+        $container = $this->compiled(['strip_final' => true], static function (ContainerBuilder $container) use ($class): void {
+            $container->register($class, $class)->setPublic(true);
+        });
+        $original = (string) realpath(\dirname((string) (new \ReflectionClass(PlainService::class))->getFileName()).'/UnwovenFinalService.php');
+
+        self::assertArrayNotHasKey($class, self::report($container)['advised']);
+        self::assertSame($class, $container->getDefinition($class)->getClass());
+        self::assertNotSame($original, (new \ReflectionClass($class))->getFileName(), 'this process loaded the copy');
+        self::assertContains($original, array_map(static fn (\Stringable $r): string => (string) $r, $container->getResources()));
+        self::assertSame(\dirname($original), \constant($class.'::DIR'), '__DIR__ in the copy is the original directory');
+        self::assertSame($original, \constant($class.'::FILE'), '__FILE__ in the copy is the original file');
+    }
+
+    #[Test]
+    public function stripFinalOnlyRewritesClassesMatchingStripFinalInclude(): void
+    {
+        $report = self::report($this->compiled(['strip_final' => true, 'strip_final_include' => ['Nothing\**']]));
+
+        self::assertStringContainsString('final and implements no interface', $report['skipped'][FinalNoInterfaceService::class]['reason']);
+        self::assertSame('interface', $report['advised'][FinalService::class]['strategy']);
+    }
+
+    #[Test]
+    public function reportFlagsAdvisorsEvaluatedPerCallWithTheirRuntimeDesignators(): void
+    {
+        $report = self::report($this->compiled());
+
+        self::assertSame([
+            'scale' => [
+                ['advisor' => ArgsAspect::class.'::check', 'runtime' => true, 'designators' => ['args']],
+                ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+            ],
+            'label' => [
+                ['advisor' => LogAspect::class.'::around', 'runtime' => false, 'designators' => []],
+            ],
+        ], $report['advised']['fixture.args']['advisors']);
+        self::assertSame(['scale' => [ArgsAspect::class.'::check', LogAspect::class.'::around'], 'label' => [LogAspect::class.'::around']], $report['advised']['fixture.args']['methods']);
+    }
+
+    #[Test]
+    public function introductionsAreAppliedAndReported(): void
+    {
+        $container = $this->compiled();
+        $report = self::report($container);
+        $proxyClass = (string) $container->getDefinition('fixture.audited')->getClass();
+
+        self::assertTrue(is_subclass_of($proxyClass, AuditedService::class));
+        self::assertTrue(is_subclass_of($proxyClass, Auditable::class));
+        self::assertSame([Auditable::class => AuditTrail::class], $report['advised']['fixture.audited']['introductions'] ?? null);
+        self::assertSame(
+            ['work' => [AuditAspect::class.'::record', LogAspect::class.'::around'], 'recordAudit' => [LogAspect::class.'::around'], 'auditTrail' => [LogAspect::class.'::around']],
+            $report['advised']['fixture.audited']['methods'],
+        );
+        self::assertArrayNotHasKey('introductions', $report['advised']['fixture.service'], 'only services with introductions carry the key');
+    }
+
+    #[Test]
+    public function anIntroductionClashingWithATargetMethodFailsTheContainerBuild(): void
+    {
+        $this->expectException(AspectDefinitionException::class);
+        $this->expectExceptionMessage(sprintf('Aspect "%s" introduces interface "%s" into class "%s", which already declares method "recordAudit()"', ClashingAuditAspect::class, Auditable::class, ClashingAuditedService::class));
+
+        $this->compiled([], static function (ContainerBuilder $container): void {
+            $container->register(ClashingAuditAspect::class, ClashingAuditAspect::class)->setAutoconfigured(true);
+            $container->register(ClashingAuditedService::class, ClashingAuditedService::class)->setPublic(true);
+        });
+    }
+
+    #[Test]
+    public function reportListsSelfInvocationsOfInterfaceProxiedServicesOnly(): void
+    {
+        $report = self::report($this->compiled());
+        $file = (string) (new \ReflectionClass(SelfCallingService::class))->getFileName();
+
+        self::assertSame(
+            [['caller' => 'outer', 'method' => 'inner', 'file' => $file, 'line' => 11]],
+            $report['advised'][SelfCallingService::class]['selfInvocations'] ?? null,
+        );
+        self::assertSame([], $report['advised'][FinalService::class]['selfInvocations'] ?? null);
+        self::assertArrayNotHasKey('selfInvocations', $report['advised']['fixture.service']);
     }
 
     #[Test]

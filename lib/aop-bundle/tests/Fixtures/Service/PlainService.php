@@ -14,4 +14,9 @@ class PlainService
 
         return 'Hello '.$name;
     }
+
+    public function normalize(string &$name): void
+    {
+        $name = trim($name);
+    }
 }
