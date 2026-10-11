@@ -1,0 +1,3 @@
+# Project settings are meant to be committed and shared.
+# Machine-local state goes here and is not.
+local/

@@ -85,11 +85,11 @@
     "repositories": [
         {
             "type": "vcs",
-            "url": "git@github.com:Phauthentic/aop.git"
+            "url": "https://github.com/Phauthentic/aop.git"
         },
         {
             "type": "vcs",
-            "url": "git@github.com:Phauthentic/symfony-aop.git"
+            "url": "https://github.com/Phauthentic/aop-symfony.git"
         }
     ]
 }

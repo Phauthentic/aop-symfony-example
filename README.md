@@ -12,7 +12,7 @@ Demo Symfony application for the `phauthentic/aop` library and the `phauthentic/
 
 ## Install and run
 
-Both packages are private and are pulled over SSH, so your SSH key needs access to the Phauthentic GitHub organisation.
+Both packages are public GitHub repositories without Packagist releases, so they are pulled from the VCS repositories declared in `composer.json`.
 PHP 8.3 or later and Composer 2 are required.
 
 ```bash
@@ -26,4 +26,4 @@ composer check   # php-cs-fixer, phpstan and the E2E tests
 ## Related repositories
 
 - [Phauthentic/aop](https://github.com/Phauthentic/aop) is the framework-free library. The documentation index is `docs/README.md`.
-- [Phauthentic/symfony-aop](https://github.com/Phauthentic/symfony-aop) is the Symfony bundle.
+- [Phauthentic/aop-symfony](https://github.com/Phauthentic/aop-symfony) is the Symfony bundle.
